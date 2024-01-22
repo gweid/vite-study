@@ -1,8 +1,8 @@
-import "./index.less"
+import styles from "./index.module.less"
 
 const PageHeader = () => {
   return (
-    <h3>this is header</h3>
+    <div className={styles.header}>this is header</div>
   )
 }
 

@@ -266,18 +266,18 @@ pnpm i less -D
 
 ```
 // index.less
-h3 {
+.header {
   color: red;
 }
 
 
 
 // index.tsx
-import "./index.less"
+import styles from "./index.module.less"
 
 const PageHeader = () => {
   return (
-    <h3>this is header</h3>
+    <div className={styles.header}>this is header</div>
   )
 }
 
@@ -298,7 +298,7 @@ export default PageHeader
 ```less
 @import url("../../assets/styles/variable.less");
 
-h3 {
+.header {
   color: @theme-color;
 }
 ```
@@ -336,7 +336,49 @@ export default defineConfig({
 
 
 
+#### CSS Modules
 
+CSS Modules 在 Vite 也是一个开箱即用的能力，Vite 会对后缀带有`.module`的样式文件自动应用 CSS Modules。
+
+下面来使用下 css modules
+
+首先，将刚刚的 less 文件名改为 `index.module.less`
+
+然后引入方式改动下：
+
+```tsx
+import styles from "./index.module.less"
+
+const PageHeader = () => {
+  return (
+    <div className={styles.header}>this is header</div>
+  )
+}
+```
+
+
+
+现在打开浏览器，可以看见标签的类名已经被处理成了哈希值的形式:
+
+![](./imgs/img6.png)
+
+同样的，还可以在配置文件中`css.modules`选项来配置 CSS Modules 的功能，例如：
+
+```ts
+export default defineConfig({
+  css: {
+    modules: {
+      // 一般我们可以通过 generateScopedName 属性来对生成的类名进行自定义
+      // 其中，name 表示当前文件名，local 表示类名
+      generateScopedName: "[name]__[local]__[hash:base64:8]"
+    }
+  }
+})
+```
+
+此时，再看可以发现，类名已经变成了自定义形式
+
+![](./imgs/img7.png)
 
 
 
