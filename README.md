@@ -227,7 +227,162 @@ Vite 会将项目的源代码编译成浏览器可以识别的代码，与此同
 
 ### vite 对样式资源的处理
 
- 
+样式方案是前端工程化绕不开的一个话题，在最原始的开发阶段大家都是手写原生的 CSS，但原生 CSS 存在着诸多问题：
+
+- **发体验**欠佳。比如原生 CSS 不支持选择器的嵌套（从Chrome 112 开始，原生 CSS也支持嵌套了）
+- **样式污染**问题。如果出现同样的类名，很容易造成不同的样式互相覆盖和污染
+- **浏览器兼容**问题。为了兼容不同的浏览器，我们需要对一些属性(如`transition`)加上不同的浏览器前缀
+- 打包后的**代码体积**问题。如果不用任何的 CSS 工程化方案，所有的 CSS 代码都将打包到产物中，即使有部分样式并没有在代码中使用，导致产物体积过大
+
+
+
+针对上述问题，社区诞生了一些方案：
+
+- `CSS 预处理器`：主流的包括`Sass/Scss`、`Less`和`Stylus`。这些方案各自定义了一套语法，让 CSS 也能使用嵌套规则，甚至能像编程语言一样定义变量、写条件判断和循环语句，增强了样式语言的灵活性，解决原生 CSS 的**开发体验问题**
+- `CSS Modules`：能将 CSS 类名处理成哈希值，这样就可以避免同名的情况下**样式污染**的问题
+- CSS 后处理器`PostCSS`，用来解析和处理 CSS 代码，可以实现的功能非常丰富，比如将 `px` 转换为 `rem`、根据目标浏览器情况自动加上类似于`--moz--`、`-o-`的属性前缀等等
+- `CSS in JS` 方案，主流的包括`emotion`、`styled-components`等等，顾名思义，这类方案可以实现直接在 JS 中写样式代码，基本包含`CSS 预处理器`和 `CSS Modules` 的各项优点，非常灵活，解决了开发体验和全局样式污染的问题
+- CSS 原子化框架，如`Tailwind CSS`、`Windi CSS`，通过类名来指定样式，大大简化了样式写法，提高了样式开发的效率，主要解决了原生 CSS **开发体验**的问题
+
+这几种方案没有孰优孰劣，各自解决的方案有重叠的部分，但也有一定的差异
+
+那么，在 vite 中要怎么使用这几种方案呢？
+
+
+
+#### CSS 预处理器
+
+Vite 本身对 CSS 各种预处理器语言(`Sass/Scss`、`Less`和`Stylus`)做了内置支持。也就是说，即使你不经过任何的配置也可以直接使用各种 CSS 预处理器。
+
+由于 Vite 底层会调用 CSS 预处理器的官方库进行编译，而 Vite 为了实现按需加载，并没有内置这些工具库，而是让用户根据需要安装。
+
+这里以 less 为例
+
+```shell
+pnpm i less -D
+```
+
+安装完 less，直接就可以在项目中创建 .less 文件使用了
+
+```
+// index.less
+h3 {
+  color: red;
+}
+
+
+
+// index.tsx
+import "./index.less"
+
+const PageHeader = () => {
+  return (
+    <h3>this is header</h3>
+  )
+}
+
+export default PageHeader
+```
+
+
+
+下面来封装一个全局的主题色
+
+```less
+// variable.less
+@theme-color: red;
+```
+
+然后应用这个变量
+
+```less
+@import url("../../assets/styles/variable.less");
+
+h3 {
+  color: @theme-color;
+}
+```
+
+
+
+但是这样有一个问题：每次要使用`$theme-color`属性的时候我们都需要手动引入`variable.scss`文件
+
+vite 提供了方案解决这种问题，需要在 `vite.config.ts` 文件中进行一些配置
+
+```ts
+// vite.config.ts
+
+// 如果类型报错，需要安装 @types/node: pnpm i @types/node -D
+import path from 'path'
+import { defineConfig, normalizePath } from 'vite'
+
+// 全局 less 文件的路径
+// 用 normalizePath 解决 window 下的路径问题
+const variablePath = normalizePath(path.resolve('./src/assets/styles/variable.less'));
+
+export default defineConfig({
+  css: {
+    preprocessorOptions: {
+      less: {
+        // additionalData 的内容会在每个 less 文件的开头自动注入
+        additionalData: `@import "${variablePath}";`
+      }
+    }
+  }
+})
+```
+
+这样，就可以直接在文件中使用全局文件的变量，相当于之前手动引入的方式显然方便了许多
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
