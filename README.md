@@ -388,13 +388,83 @@ export default defineConfig({
 
 
 
+#### PostCSS
+
+在 vite 中，可以通过 `postcss.config.js` 文件或者直接在 Vite 配置文件中进行 postcss 配置
+
+比如这里，利用 postcss 解决浏览器兼容问题，首先安装一个 postcss 插件：`autoprefixer`
+
+```shell
+pnpm i autoprefixer -D
+```
 
 
 
+在 `vite.config.ts` 中配置
+
+```ts
+import autoprefixer from 'autoprefixer'
+
+export default defineConfig({
+  css: {
+    postcss: {
+      plugins: [
+        autoprefixer({
+          // 指定目标浏览器
+          overrideBrowserslist: ['last 2 versions', 'not dead']
+        })
+      ]
+    }
+  }
+})
+```
 
 
 
+在 `postcss.config.js` 中配置
 
+```js
+import autoprefixer from 'autoprefixer'
+
+export default {
+  plugins: [
+    autoprefixer({
+      // 指定目标浏览器
+      overrideBrowserslist: ['last 2 versions', 'not dead']
+    })
+  ]
+}
+```
+
+
+
+然后执行 `pnpm build`，后查看产物
+
+![](./imgs/img8.png)
+
+
+
+这里，更加建议将 postcss 相关的配置放到 `postcss.config.js` 文件中
+
+
+
+还有，这里跟浏览器相关的兼容配置，也建议抽离到 `.browserslistrc`文件，这样能做到 browserslist 的复用
+
+```
+// .browserslistrc
+
+last 2 versions,not dead
+```
+
+
+
+由于有 CSS 代码的 AST (抽象语法树)解析能力，PostCSS 可以做的事情非常多，甚至能实现 CSS 预处理器语法和 CSS Modules，社区当中也有不少的 PostCSS 插件，除了`autoprefixer`插件，常见的插件还包括:
+
+- [postcss-pxtorem](https://link.juejin.cn/?target=https%3A%2F%2Fgithub.com%2Fcuth%2Fpostcss-pxtorem)： 用来将 px 转换为 rem 单位，在适配移动端的场景下很常用。
+- [postcss-preset-env](https://link.juejin.cn/?target=https%3A%2F%2Fgithub.com%2Fcsstools%2Fpostcss-preset-env): 通过它，你可以编写最新的 CSS 语法，不用担心兼容性问题。
+- [cssnano](https://link.juejin.cn/?target=https%3A%2F%2Fgithub.com%2Fcssnano%2Fcssnano): 主要用来压缩 CSS 代码，跟常规的代码压缩工具不一样，它能做得更加智能，比如提取一些公共样式进行复用、缩短一些常见的属性值等等。
+
+关于 PostCSS 插件，可以去这个站点探索更多的内容：[www.postcss.parts/](https://link.juejin.cn/?target=https%3A%2F%2Fwww.postcss.parts%2F) 
 
 
 
