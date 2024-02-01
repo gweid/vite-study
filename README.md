@@ -468,6 +468,105 @@ last 2 versions,not dead
 
 
 
+#### CSS In JS
+
+
+
+
+
+#### CSS 原子化框架
+
+在目前的社区当中，CSS 原子化框架主要包括`Tailwind CSS` 和 `Windi CSS`。
+
+Windi CSS 作为前者的替换方案，实现了按需生成 CSS 类名的功能，开发环境下的 CSS 产物体积大大减少，速度上比`Tailwind CSS v2`快 20~100 倍！
+
+当然，Tailwind CSS 在 v3 版本也引入 [JIT(即时编译)](https://link.juejin.cn/?target=https%3A%2F%2Fv2.tailwindcss.com%2Fdocs%2Fjust-in-time-mode) 的功能，解决了开发环境下 CSS 产物体积庞大的问题。
+
+
+
+但是 `windi css` 在 2023-3月停止维护了，现在更建议使用 `UnoCSS`，UnoCSS 看作是 Windi CSS 的"精神继承者"
+
+
+
+这里主要说明下 `UnoCSS`
+
+
+
+首先，安装相关依赖
+
+```shell
+pnpm add -D unocss
+```
+
+
+
+然后配置 `vite.config.ts`
+
+```typescript
+import UnoCSS from 'unocss/vite'
+
+export default {
+  plugins: [
+    UnoCSS()
+  ]
+}
+```
+
+
+
+接着在 `main.tsx` 中引入
+
+```tsx
+import 'virtual:uno.css'
+```
+
+
+
+这三步，就已经完成了 Windi CSS 的接入
+
+
+
+接下来是使用
+
+```tsx
+const UnoCssCom = () => {
+  return (
+    <div className="p-20 text-center">
+      <div className="font-bold text-2xl mb-2">windicss的使用</div>
+    </div>
+  )
+}
+
+export default UnoCssCom
+```
+
+
+
+可以看到，这说明已经生效了：
+
+![](./imgs/img9.png)
+
+
+
+如果需要对 `unocss` 进行配置，那么在项目根目录下建 `unocss.config.ts` 文件
+
+```typescript
+import { defineConfig } from 'unocss'
+
+export default defineConfig({
+  
+})
+```
+
+
+
+附录
+[unocss 中文文档](https://alfred-skyblue.github.io/unocss-docs-cn/)
+
+[unocss交互式文档](https://unocss.dev/interactive/)
+
+可以通过交互式文档来查看 unocss 的值及对应的样式
+
 
 
 

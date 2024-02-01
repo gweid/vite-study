@@ -2,13 +2,14 @@
 import path from 'path'
 import { defineConfig, normalizePath } from 'vite'
 import react from '@vitejs/plugin-react'
+import UnoCSS from 'unocss/vite'
 
 // 全局 less 文件的路径
 // 用 normalizePath 解决 window 下的路径问题
 const variablePath = normalizePath(path.resolve('./src/assets/styles/variable.less'));
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), UnoCSS()],
   server: {
     port: 5007
   },
