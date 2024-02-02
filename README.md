@@ -4,6 +4,12 @@ vite 学习总结
 
 
 
+[vite插件推荐](https://juejin.cn/post/7287131053566459963)
+
+
+
+
+
 ## 前言
 
 前端工程的痛点：
@@ -798,6 +804,409 @@ Vite 中引入静态资源时，支持在路径最后加上一些特殊的 query
 
 
 #### 自定义部署域名
+
+一般在我们访问线上的站点时，站点里面一些静态资源的地址都包含了相应域名的前缀，如:
+
+```html
+<img src="https://test-888999.com/imgs/logo.png" />
+```
+
+`https://test-888999.com/` 是 CDN 地址，`imgs/logo.png` 是开发阶段地址。那么怎么在生产阶段替换呢？
+
+
+
+在 Vite 中我们可以有更加自动化的方式来实现地址的替换，只需要在配置文件中指定`base`参数即可：
+
+首先，在项目根目录新增的两个环境变量文件`.env.development`和`.env.production`，顾名思义，即分别在开发环境和生产环境注入一些环境变量，这里为了区分不同环境我们加上了`NODE_ENV`
+
+```typescript
+// .env.development
+NODE_ENV=development
+
+// .env.production
+NODE_ENV=production
+```
+
+
+
+配置 `vite.config.ts`
+
+```typescript
+const isProd = process.env.NODE_ENV === 'production'
+
+const CDN_URL = 'https://test-888999.com'
+
+export default defineConfig({
+  base: isProd ? CDN_URL : '/',
+})
+```
+
+
+
+执行 `pnpm build` 可以看到，已经被替换了
+
+![](./imgs/img10.png)
+
+
+
+但是这样会有一些缺点，HTML 中的一些 JS、CSS 资源链接也一起加上了 CDN 地址前缀。
+
+有时候可能项目中的某些图片需要存放到另外的存储服务
+
+- 一种直接的方案是将完整地址写死到 src 属性中，比如将 CDN 前缀封装函数，每次引入
+
+  ```typescript
+  const getCDN = () => {
+    const isProd = process.env.NODE_ENV === 'production'
+    
+    if (isProd) return 'https://test-888999.com'
+    
+    return ''
+  }
+  ```
+
+- 另一种方法是通过定义环境变量的方式
+
+  在项目根目录新增 `.env` 文件，内容如下：
+
+  ```typescript
+  // 优先级问题：
+  // 开发环境优先级: .env.development > .env
+  // 生产环境优先级: .env.production > .env
+  
+  VITE_IMG_BASE_URL=https://test-888999.com
+  ```
+
+  然后子啊 `vite-env.d.ts` 中增加类型声明
+
+  ```typescript
+  interface ImportMetaEnv {
+    // 自定义的环境变量
+    readonly VITE_IMG_BASE_URL: string;
+  }
+  
+  interface ImportMeta {
+    readonly env: ImportMetaEnv;
+  }
+  ```
+
+  值得注意的是，如果某个环境变量要在 Vite 中通过 `import.meta.env` 访问，那么它必须以`VITE_`开头，如`VITE_IMG_BASE_URL`。接下来我们在组件中来使用这个环境变量:
+
+  ```html
+  <img src={new URL('./logo.png', import.meta.env.VITE_IMG_BASE_URL).href} />
+  ```
+
+  当然，可以封装一下：
+
+  ```typescript
+  const getImgBaseUrl = (img: string) => {
+    return new URL(`${img}`, import.meta.env.VITE_IMG_BASE_URL).href
+  }
+  ```
+
+  > 这种方式有一个缺点，就是无论开发还是生产，都会被替换
+
+
+
+#### 静态文件是单文件还是内联？
+
+在 Vite 中，所有的静态资源都有两种构建方式，一种是打包成一个单文件，另一种是通过 base64 编码的格式内嵌到代码中。
+
+一般来说，对于比较小的资源，适合内联到代码中，一方面对`代码体积`的影响很小，另一方面可以减少不必要的网络请求，`优化网络性能`。而对于比较大的资源，就推荐单独打包成一个文件，而不是内联了，否则可能导致上 MB 的 base64 字符串内嵌到代码中，导致代码体积瞬间庞大，页面加载性能直线下降。
+
+
+
+Vite 中内置的优化方案是下面这样的:
+
+- 如果静态资源体积 >= 4KB，则提取成单独的文件
+- 如果静态资源体积 < 4KB，则作为 base64 格式的字符串内联
+
+当然，这个 `4KB` 的临界值可以调整，配置 `vite.config.ts` 文件
+
+```typescript
+export default defineConfig({
+  build: {
+    assetsInlineLimit: 8 *1024
+  }
+})
+```
+
+> svg 格式的文件不受这个临时值的影响，始终会打包成单独的文件，因为它和普通格式的图片不一样，需要动态设置一些属性
+
+
+
+#### 图片压缩
+
+图片资源的体积往往是项目产物体积的大头，如果能尽可能精简图片的体积，那么对项目整体打包产物体积的优化将会是非常明显的。
+
+在 JavaScript 领域有一个非常知名的图片压缩库[imagemin](https://link.juejin.cn/?target=https%3A%2F%2Fwww.npmjs.com%2Fpackage%2Fimagemin)，作为一个底层的压缩工具，前端的项目中经常基于它来进行图片压缩，比如 Webpack 中大名鼎鼎的`image-webpack-loader`。
+
+Vite 社区当中也已经有了开箱即用的 Vite 插件——`vite-plugin-imagemin`
+
+
+
+安装 `vite-plugin-imagemin`
+
+```ts
+pnpm i vite-plugin-imagemin -D
+```
+
+
+
+然后配置 `vite.config.ts`
+
+```typescript
+import viteImagemin from 'vite-plugin-imagemin'
+
+export default defineConfig({
+  plugins: [
+    viteImagemin({
+      // 无损压缩，无损压缩下图片质量不会变差
+      optipng: {
+        optimizationLevel: 7
+      }
+    })
+  ]
+})
+```
+
+执行 `pnpm build`，可以在控制台看到压缩效果
+
+![](./imgs/img11.png)
+
+
+
+也可以进行有损压缩，这种会导致图片质量变差
+
+```typescript
+import viteImagemin from 'vite-plugin-imagemin'
+
+export default defineConfig({
+  plugins: [
+    viteImagemin({
+      // 有损压缩，图片质量会变差
+      pngquant: {
+        quality: [0.7, 0.8]
+      }
+    })
+  ]
+})
+```
+
+![](./imgs/img12.png)
+
+可以看到，压缩效率更高（但是要注意，过高的压缩率会导致图片质量变差）
+
+
+
+`vite-plugin-imagemin` 其它的一些配置
+
+```typescript
+import { defineConfig,loadEnv} from 'vite'
+import viteImagemin from 'vite-plugin-imagemin'
+
+export default  ({ mode }) => defineConfig({
+  plugins: [
+    viteImagemin({
+      gifsicle: { // gif图片压缩
+        optimizationLevel: 3, // 选择1到3之间的优化级别
+        interlaced: false, // 隔行扫描gif进行渐进式渲染
+        // colors: 2 // 将每个输出GIF中不同颜色的数量减少到num或更少。数字必须介于2和256之间。
+      },
+      optipng: { // png
+        optimizationLevel: 7, // 选择0到7之间的优化级别
+      },
+      mozjpeg: {// jpeg
+        quality: 20, // 压缩质量，范围从0(最差)到100(最佳)。
+      },
+      pngquant: {// png
+        quality: [0.8, 0.9], // Min和max是介于0(最差)到1(最佳)之间的数字，类似于JPEG。达到或超过最高质量所需的最少量的颜色。如果转换导致质量低于最低质量，图像将不会被保存。
+        speed: 4, // 压缩速度，1(强力)到11(最快)
+      },
+      svgo: { // svg压缩
+        plugins: [
+          {
+            name: 'removeViewBox',
+          },
+          {
+            name: 'removeEmptyAttrs',
+            active: false,
+          },
+        ],
+      },
+    }),
+  ]
+})
+```
+
+
+
+#### 雪碧图优化
+
+在实际的项目中我们还会经常用到各种各样的 svg 图标，虽然 svg 文件一般体积不大，但 Vite 中对于 svg 文件会始终打包成单文件，大量的图标引入之后会导致网络请求增加，大量的 HTTP 请求会导致网络解析耗时变长，页面加载性能直接受到影响。
+
+> HTTP2 的多路复用设计可以解决大量 HTTP 的请求导致的网络加载性能问题，因此雪碧图技术在 HTTP2 并没有明显的优化效果，这个技术更适合在传统的 HTTP 1.1 场景下使用(
+
+
+
+比如分别引入 4 个 svg 文件
+
+```typescript
+import Svg1 from '@assets/svgs/svg-1.svg'
+import Svg2 from '@assets/svgs/svg-2.svg'
+import Svg3 from '@assets/svgs/svg-3.svg'
+import Svg4 from '@assets/svgs/svg-4.svg'
+```
+
+Vite 中提供了`import.meta.glob`的语法糖来解决这种**批量导入**的问题，如上述的 import 语句可以写成下面这样
+
+```typescript
+const icons = import.meta.glob('@assets/svgs/svg-*.svg')
+```
+
+控制台打印下，结果：
+
+![](./imgs/img13.png)
+
+可以看到对象的 value 都是动态 import，适合按需加载的场景。在这里我们只需要**同步加载**即可
+
+```typescript
+// eager: true 表示同步加载
+const icons = import.meta.glob('@assets/svgs/svg-*.svg', { eager: true })
+
+const iconUrls = Object.values(icons).map((mod: any) => mod.default)
+
+
+const SvgPage = () => {
+  return (
+    <div className="text-center mt-10">
+      {iconUrls.map(icon => (
+        <img src={icon} key={icon} className="w-20 h-20 ml-4" />
+      ))}
+    </div>
+  )
+}
+
+export default SvgPage
+```
+
+
+
+查看浏览器，可以发现，同时发出了 4 个请求
+
+![](./imgs/img14.png)
+
+
+
+假设页面有多个 svg 图标，将会很多 HTTP 请求。此时可以将所有 svg 图标合并为雪碧图。
+
+可以通过`vite-plugin-svg-icons`来实现这个方案
+
+安装 `vite-plugin-svg-icons`
+
+```typescript
+pnpm i vite-plugin-svg-icons -D
+```
+
+
+
+配置 `vite.config.ts`
+
+```typescript
+import { createSvgIconsPlugin } from 'vite-plugin-svg-icons'
+
+export default defineConfig({
+  plugins: [
+    createSvgIconsPlugin({
+      iconDirs: [path.join(__dirname, 'src/assets/svgs')]
+    })
+  ]
+})
+```
+
+
+
+在`src/main.tsx`文件中添加一行代码
+
+```typescript
+import 'virtual:svg-icons-register'
+```
+
+
+
+创建一个 `SvgIcon` 组件
+
+```tsx
+export interface IProps {
+  name: string
+  prefix?: string
+  color?: string
+  [key: string]: any
+}
+
+const SvgIcon = ({
+  name,
+  prefix = 'icon',
+  color = '#333',
+  ...props
+}: IProps)  => {
+  const symbolId = `#${prefix}-${name}`;
+
+  return (
+    <svg {...props} aria-hidden="true">
+      <use href={symbolId} fill={color} />
+    </svg>
+  )
+}
+
+export default SvgIcon
+```
+
+
+
+使用
+
+```tsx
+import SvgIcon from '../svg-icon'
+
+const icons = import.meta.glob('@assets/svgs/svg-*.svg', { eager: true })
+
+// const iconUrls = Object.values(icons).map((mod: any) => mod.default)
+const iconUrls = Object.values(icons).map((mod: any) => {
+  const fileName = mod.default.split('/').pop();
+  const [svgName] = fileName.split('.');
+  return svgName;
+})
+
+
+const SvgPage = () => {
+  return (
+    <div className="text-center mt-10">
+      {iconUrls.map(icon => (
+        <SvgIcon name={icon} key={icon} className="w-20 h-20 ml-4" />
+      ))}
+    </div>
+  )
+}
+
+export default SvgPage
+```
+
+
+
+现在回到浏览器的页面中，发现雪碧图已经生成：
+
+![](./imgs/img15.png)
+
+雪碧图包含了所有图标的具体内容，而对于页面每个具体的图标，则通过 `use` 属性来引用雪碧图的对应内容
+
+![](./imgs/img16.png)
+
+
+
+
+
+
 
 
 
