@@ -262,6 +262,23 @@ Vite 本身对 CSS 各种预处理器语言(`Sass/Scss`、`Less`和`Stylus`)做�
 pnpm i less -D
 ```
 
+
+
+如果使用了 ts，为了在引入样式时，不报错，需要在 `vite-env.d.ts` 中配置下
+
+> 注意，这里一定要配置在 `/// <reference types="vite/client" />` 上面才生效
+
+```typescript
+declare module '*.module.less' {
+  const classes: { readonly [key: string]: string }
+  export default classes
+}
+
+/// <reference types="vite/client" />
+```
+
+
+
 安装完 less，直接就可以在项目中创建 .less 文件使用了
 
 ```
@@ -566,6 +583,223 @@ export default defineConfig({
 [unocss交互式文档](https://unocss.dev/interactive/)
 
 可以通过交互式文档来查看 unocss 的值及对应的样式
+
+
+
+### Vite 对静态资源的处理
+
+静态资源处理是前端工程经常遇到的问题，在真实的工程中不仅仅包含了动态执行的代码，也不可避免地要引入各种静态资源，如`图片`、`JSON`、`Worker 文件`、`Web Assembly 文件`等等。
+
+而静态资源本身并不是标准意义上的模块，因此对它们的处理和普通的代码是需要区别对待的。一方面我们需要解决**资源加载**的问题，对 Vite 来说就是如何将静态资源解析并加载为一个 ES 模块的问题；另一方面在**生产环境**下我们还需要考虑静态资源的部署问题、体积问题、网络性能问题，并采取相应的方案来进行优化。
+
+
+
+#### 图片处理
+
+在开发过程中，最常见的加载图片的场景：
+
+1. 在 HTML 或者 JSX 中，通过 img 标签来加载图片，如:
+
+```html
+<img src="../../assets/a.png"></img>
+```
+
+2. 在 CSS 中通过 background 属性加载图片，如:
+
+```css
+background: url('../../assets/b.png') norepeat;
+```
+
+3. 在 JavaScript 中，通过脚本的方式动态指定图片的`src`属性，如:
+
+```javascript
+document.getElementById('hero-img').src = '../../assets/c.png'
+```
+
+
+
+在 vite 中，其实已经内置了这个能力，只需要正常引入即可，但是如果需要通过别名前缀引入，俺么需要添加 `alias`
+
+```typescript
+// 如果类型报错，需要安装 @types/node: pnpm i @types/node -D
+import path from 'path'
+import { defineConfig } from 'vite'
+
+export default defineConfig({
+  resolve: {
+    alias: {
+      '@assets': path.join(__dirname, 'src/assets')
+    }
+  }
+})
+```
+
+如果使用了 ts，那么需要配置 `tsconfig.json`
+
+```json
+{
+  "compilerOptions": {
+    "baseUrl": "./",
+    "paths": {
+      "@assets/*": ["src/assets/*"],
+      "@components/*": ["src/components/*"],
+    }
+  }
+}
+```
+
+
+
+那么就可以使用了
+
+```tsx
+import MusicLogo from '@assets/images/music.png'
+
+const StaticCom = () => {
+  return (
+    <div className="text-center">
+      <h3>静态资源</h3>
+      <img src={MusicLogo} className='w-100 h-80' />
+    </div>
+  )
+}
+
+export default StaticCom
+```
+
+
+
+但是这里还有一个问题，在 ts 中引入会报错，需要配置下 `vite-env.d.ts` 文件
+
+```ts
+declare module '*.svg'
+declare module '*.png'
+declare module '*.jpg'
+declare module '*.jpeg'
+declare module '*.gif'
+declare module '*.bmp'
+declare module '*.tiff'
+declare module '*.json'
+
+/// <reference types="vite/client" />
+```
+
+一般建议将常用的静态资源配置上
+
+
+
+#### SVG 组件方式加载
+
+上面成功地在 Vite 中实现了图片的加载，上述这些加载的方式对于 svg 格式来说依然是适用的。不过，开发中通常也希望能将 svg 当做一个组件来引入，这样可以很方便地修改 svg 的各种属性，而且比 img 标签的引入方式更加优雅。
+
+SVG 组件加载在不同的前端框架中的实现不太相同，社区中也已经了有了对应的插件支持：
+
+- Vue2 项目中可以使用 [vite-plugin-vue2-svg](https://link.juejin.cn/?target=https%3A%2F%2Fgithub.com%2Fpakholeung37%2Fvite-plugin-vue2-svg)插件
+- Vue3 项目中可以引入 [vite-svg-loader](https://link.juejin.cn/?target=https%3A%2F%2Fgithub.com%2Fjpkleemans%2Fvite-svg-loader)
+- React 项目使用 [vite-plugin-svgr](https://link.juejin.cn/?target=https%3A%2F%2Fgithub.com%2Fpd4d10%2Fvite-plugin-svgr)插件
+
+在 react 中安装
+
+```shell
+pnpm i vite-plugin-svgr -D
+```
+
+然后配置 `vite.config.ts`
+
+```typescript
+import svgr from 'vite-plugin-svgr'
+
+export default defineConfig({
+  plugins: [svgr()]
+})
+```
+
+同时为了避免 ts 报错，需要配置 `tsconfig.json`
+
+```json
+{
+  "compilerOptions": {
+    "types": ["vite-plugin-svgr/client"],
+  }
+}
+```
+
+
+
+然后就可以引入使用了，引用方式为 `svg 图片路径+?react` 的形式
+
+```tsx
+import Algorand from "@assets/svgs/algorand.svg?react"
+
+const StaticCom = () => {
+  return (
+    <div className="text-center">
+      <Algorand className='w-40 h-40 mt-10'/>
+    </div>
+  )
+}
+
+export default StaticCom
+```
+
+
+
+#### JSON 加载
+
+Vite 中已经内置了对于 JSON 文件的解析，底层使用`@rollup/pluginutils` 的 `dataToEsm` 方法将 JSON 对象转换为一个包含各种具名导出的 ES 模块。
+
+使用方式
+
+```typescript
+import { version } from '../../../package.json'
+```
+
+
+
+#### 其它静态资源
+
+除了上述的一些资源格式，Vite 也对下面几类格式提供了内置的支持：
+
+- 媒体类文件，包括`mp4`、`webm`、`ogg`、`mp3`、`wav`、`flac`和`aac`
+- 字体类文件。包括`woff`、`woff2`、`eot`、`ttf` 和 `otf`
+- 文本类。包括`webmanifest`、`pdf`和`txt`
+
+也就是说，在 Vite 中，可以将这些类型的文件当做一个 ES 模块来导入使用。如果项目中还存在其它格式的静态资源，也可以通过 `assetsInclude` 配置让 Vite 来支持加载:
+
+配置 `vite.config.ts` 文件
+
+```
+export default defineConfig({
+  assetsInclude: ['.gltf']
+})
+```
+
+
+
+#### 特殊资源后缀
+
+Vite 中引入静态资源时，支持在路径最后加上一些特殊的 query 后缀，包括：
+
+- `?url`: 表示获取资源的路径，这在只想获取文件路径而不是内容的场景将会很有用
+- `?raw`: 表示获取资源的字符串内容，如果你只想拿到资源的原始内容，可以使用这个后缀
+- `?inline`: 表示资源强制内联，而不是打包成单独的文件
+
+
+
+### Vite 生产环境静态资源处理
+
+在生产环境下，静态资源面临着一些新的问题：
+
+- 部署域名怎么配置？
+- 资源打包成单文件还是作为 Base64 格式内联?
+- 图片太大了怎么压缩？
+- svg 请求数量太多了怎么优化？
+
+
+
+#### 自定义部署域名
+
+
 
 
 

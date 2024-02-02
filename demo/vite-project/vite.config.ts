@@ -3,15 +3,22 @@ import path from 'path'
 import { defineConfig, normalizePath } from 'vite'
 import react from '@vitejs/plugin-react'
 import UnoCSS from 'unocss/vite'
+import svgr from 'vite-plugin-svgr'
 
 // 全局 less 文件的路径
 // 用 normalizePath 解决 window 下的路径问题
 const variablePath = normalizePath(path.resolve('./src/assets/styles/variable.less'));
 
 export default defineConfig({
-  plugins: [react(), UnoCSS()],
+  plugins: [react(), UnoCSS(), svgr()],
   server: {
     port: 5007
+  },
+  resolve: {
+    alias: {
+      '@assets': path.join(__dirname, 'src/assets'),
+      '@components': path.join(__dirname, 'src/components')
+    }
   },
   css: {
     modules: {
@@ -25,5 +32,6 @@ export default defineConfig({
         additionalData: `@import "${variablePath}";`
       }
     }
-  }
+  },
+  assetsInclude: ['.gltf']
 })

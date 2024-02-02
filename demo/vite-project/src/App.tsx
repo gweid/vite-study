@@ -1,5 +1,6 @@
-import PageHeader from './components/page-header'
-import UnoCssCom from './components/unocss-com'
+import PageHeader from '@components/page-header'
+import UnoCssCom from '@components/unocss-com'
+import StaticCom from '@components/static-com'
 
 import './App.css'
 
@@ -9,6 +10,7 @@ function App() {
     <div className="App">
       <PageHeader />
       <UnoCssCom />
+      <StaticCom />
     </div>
   )
 }
