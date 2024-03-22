@@ -1206,6 +1206,50 @@ export default SvgPage
 
 
 
+### 代码风格和质量
+
+在真实的工程项目中，尤其是多人协作的场景下，代码规范就变得非常重要了，它可以用来统一团队代码风格，避免不同风格的代码混杂到一起难以阅读，有效提高**代码质量**，甚至可以将一些**语法错误**在开发阶段提前规避掉。但仅有规范本身不够，还需要**自动化的工具**(即`Lint 工具`)来保证规范的落地，把代码规范检查(包括`自动修复`)这件事情交给机器完成，开发者只需要专注应用逻辑本身。
+
+
+
+#### JS/TS 规范：eslint
+
+ESLint 主要通过配置文件对各种代码格式的规则(`rules`)进行配置，以指定具体的代码规范。目前开源社区也有一些成熟的规范集可供使用，著名的包括[Airbnb JavaScript 代码规范](https://link.juejin.cn/?target=https%3A%2F%2Fgithub.com%2Fairbnb%2Fjavascript)、[Standard JavaScript 规范](https://link.juejin.cn/?target=https%3A%2F%2Fgithub.com%2Fstandard%2Fstandard%2Fblob%2Fmaster%2Fdocs%2FREADME-zhcn.md)、[Google JavaScript 规范](https://link.juejin.cn/?target=https%3A%2F%2Fgoogle.github.io%2Fstyleguide%2Fjsguide.html)等等。当然，根据团队需求，也可以自己定制一套团队独有的代码规范，这在一些大型团队当中还是很常见的。
+
+
+
+#### ESLint 安装及初始化
+
+安装
+
+```shell
+pnpm i eslint -D
+```
+
+
+
+执行 ESLint 命令进行初始化
+
+```shell
+npx eslint --init
+```
+
+
+
+然后通过命令行选择，生成一份基础配置
+
+![](./imgs/img17.png)
+
+
+
+
+
+
+
+
+
+
+
 
 
 
