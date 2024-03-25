@@ -1521,6 +1521,172 @@ export default defineConfig({
 
 
 
+#### 样式规范 stylelint
+
+Stylelint 主要专注于样式代码的规范检查，内置了 **170 多个 CSS 书写规则**，支持 **CSS 预处理器**(如 Sass、Less)，提供**插件化机制**以供开发者扩展规则，已经被 Google、Github 等**大型团队**投入使用。与 ESLint 类似，在规范检查方面，Stylelint 已经做的足够专业，而在代码格式化方面，仍然需要结合 Prettier 一起来使用。
+
+
+
+安装 stylelint 相关的 npm 包
+
+```shell
+pnpm i stylelint stylelint-prettier stylelint-config-prettier stylelint-config-recess-order stylelint-config-standard stylelint-config-standard-less -D
+```
+
+
+
+然后，在项目根目录新建 `.stylelintrc.js` 文件，配置内容如下：
+
+```js
+// .stylelintrc.js
+module.exports = {
+  // 注册 stylelint 的 prettier 插件
+  plugins: ['stylelint-prettier'],
+  // 继承一系列规则集合
+  extends: [
+    // standard 规则集合
+    'stylelint-config-standard',
+    // standard 规则集合的 less 版本
+    'stylelint-config-standard-less',
+    // 样式属性顺序规则
+    'stylelint-config-recess-order',
+    // 接入 Prettier 规则
+    // 'stylelint-config-prettier',
+    // 'stylelint-prettier/recommended'
+  ],
+  // 配置 rules
+  rules: {
+    // 开启 Prettier 自动格式化功能
+    'prettier/prettier': true
+  }
+};
+```
+
+
+
+同样的，在开发阶段，也可以依赖 Stylelint 相关的 Vite 插件，实现在项目开发阶段提前暴露出样式代码的规范问题
+
+安装
+
+```shell
+pnpm i vite-plugin-stylelint -D
+```
+
+
+
+配置 `vite.config.ts`
+
+```typescript
+import viteStyleLint from 'vite-plugin-stylelint'
+
+export default defineConfig({
+  plugins: [
+    viteStyleLint()
+  ]
+})
+```
+
+
+
+这样，就会在控制台显示相应的错误提示
+
+![](./imgs/img20.png)
+
+
+
+#### Husky + lint-staged 拦截 git 提交
+
+在开发阶段提前规避掉代码格式的问题，但实际上这也只是将问题提前暴露，并不能保证规范问题能完全被解决，还是可能导致线上的代码出现不符合规范的情况。
+
+在代码提交的时候进行卡点检查，也就是拦截 `git commit` 命令，进行代码格式检查，只有确保通过格式检查才允许正常提交代码。社区中已经有了对应的工具——`Husky`来完成这件事情
+
+
+
+安装
+
+```shell
+pnpm i husky -D
+```
+
+这里需要注意的是，Husky `4.x` 及以下版本，可以在`package.json`中配置 husky 的钩子，例如：
+
+```json
+// package.json
+{
+  "husky": {
+    "pre-commit": "npm run lint"
+  }
+}
+```
+
+但是在 Husky 7.x 版本以上，是无效的，Husky 7.x 以上版本需要：
+
+```shell
+pnpm exec husky init
+```
+
+执行完后，将会在项目根目录的`.husky`目录中看到名为`pre-commit`的文件，里面是 `git commit`前要执行的脚本
+
+然后修改 `.husky/pre-commit` 文件，如下：
+
+```shell
+pnpm lint
+pnpm lint:style
+```
+
+那么，在执行 git commit 之前，就会先执行检测脚本，拦截代码提交
+
+
+
+但是以上会有一些问题：Husky 中每次执行`npm run lint`都对仓库中的代码进行全量检查，也就是说，即使某些文件并没有改动，也会走一次 Lint 检查，当项目代码越来越多的时候，提交的过程会越来越慢，影响开发体验。
+
+
+
+而`lint-staged`就是用来解决上述全量扫描问题的，可以实现只对存入`暂存区`的文件进行 Lint 检查，大大提高了提交代码的效率
+
+
+
+安装
+```shell
+pnpm i lint-staged -D
+```
+
+然后在 `package.json` 中添加
+
+```json
+{
+  "name": "vite-project",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "dev": "vite",
+    "dev:tsc": "tsc --noEmit --watch",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "lint": "eslint --ext .js,.jsx,.ts,.tsx --fix --quiet ./src",
+    "lint:style": "stylelint --fix \"src/**/*.{css,less}\"",
+    "prepare": "husky"
+  },
+
+  "lint-staged": {
+    "**/*.{js,jsx,tsx,ts}": [
+      "npm run lint:script",
+      "git add ."
+    ],
+    "**/*.{scss}": [
+      "npm run lint:style",
+      "git add ."
+    ]
+  },
+}
+```
+
+在 Husky 中应用`lint-stage`，回到`.husky/pre-commit`脚本中，将原来的换成：
+
+```shell
+npx --no -- lint-staged
+```
+
 
 
 
