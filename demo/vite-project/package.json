@@ -13,11 +13,11 @@
   },
   "lint-staged": {
     "**/*.{js,jsx,tsx,ts}": [
-      "npm run lint:script",
+      "pnpm run lint",
       "git add ."
     ],
     "**/*.{scss}": [
-      "npm run lint:style",
+      "pnpm run lint:style",
       "git add ."
     ]
   },
