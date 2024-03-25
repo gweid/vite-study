@@ -1689,11 +1689,52 @@ npx --no -- lint-staged
 
 
 
+#### 提交时的 commit 信息规范
+
+除了代码规范检查之后，Git 提交信息的规范也是不容忽视的一个环节，规范的 commit 信息能够方便团队协作和问题定位。首先我们来安装一下需要的工具库
 
 
 
+安装
+
+```shell
+pnpm i commitlint @commitlint/cli @commitlint/config-conventional -D
+```
 
 
+
+项目根目录下接下来新建`.commitlintrc.js`：
+
+```js
+// .commitlintrc.js
+module.exports = {
+  extends: ["@commitlint/config-conventional"]
+};
+```
+
+
+
+一般直接使用`@commitlint/config-conventional`规范集就可以了，它所规定的 commit 信息一般由两个部分: `type` 和 `subject` 组成，结构如下:
+
+> // type 指提交的类型
+> // subject 指提交的摘要信息
+> <type>: <subject>
+
+
+
+常用的 `type` 值包括如下:
+
+- `feat`: 添加新功能。
+- `fix`: 修复 Bug。
+- `chore`: 一些不影响功能的更改。
+- `docs`: 专指文档的修改。
+- `perf`: 性能方面的优化。
+- `refactor`: 代码重构。
+- `test`: 添加一些测试代码等等。
+
+
+
+接下来将`commitlint`的功能集成到 Husky 的钩子当中
 
 
 
