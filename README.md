@@ -1242,7 +1242,282 @@ npx eslint --init
 
 
 
+#### ESLint 核心配置
 
+
+
+**1、parser 解释器**
+
+ESLint 底层默认使用 [Espree](https://link.juejin.cn/?target=https%3A%2F%2Fgithub.com%2Feslint%2Fespree)来进行 AST 解析，这个解析器目前基于 `Acron` 来实现，虽然说 `Acron` 目前能够解析绝大多数的 [ECMAScript 规范的语法](https://link.juejin.cn/?target=https%3A%2F%2Fgithub.com%2Facornjs%2Facorn%2Ftree%2Fmaster%2Facorn)，但还是不支持 TypeScript ，因此需要引入其他的解析器完成 TS 的解析。
+
+社区提供了`@typescript-eslint/parser`这个解决方案，专门为了 TypeScript 的解析而诞生，将 `TS` 代码转换为 `Espree` 能够识别的格式(即 [**Estree 格式**](https://link.juejin.cn/?target=https%3A%2F%2Fgithub.com%2Festree%2Festree))，然后在 Eslint 下通过`Espree`进行格式检查， 以此兼容了 TypeScript 语法。
+
+```js
+module.exports = {
+    "parser": "@typescript-eslint/parser"
+}
+```
+
+
+
+**2、parserOptions 选项**
+
+这个配置可以对上述的解析器进行能力定制，默认情况下 ESLint 支持 ES5 语法，可以通过这个配置进行更改，具体内容如下:
+
+- ecmaVersion: 这个配置和 `Acron` 的 [ecmaVersion](https://link.juejin.cn/?target=https%3A%2F%2Fgithub.com%2Facornjs%2Facorn%2Ftree%2Fmaster%2Facorn) 是兼容的，可以配置 `ES + 数字`(如 ES6)或者`ES + 年份`(如 ES2015)，也可以直接配置为`latest`，启用最新的 ES 语法。
+- sourceType: 默认为`script`，如果使用 ES Module 则应设置为`module`
+- ecmaFeatures: 为一个对象，表示想使用的额外语言特性，如开启 `jsx`
+
+```js
+module.exports = {
+    "parserOptions": {
+        "ecmaVersion": "latest",
+        "sourceType": "module"
+    }
+}
+```
+
+
+
+**3、rules 具体规则**
+
+`rules` 配置即代表在 ESLint 中手动调整哪些代码规则，比如字符串使用单引号，这条规则可以像如下的方式配置：
+
+```js
+// .eslintrc.cjs
+module.exports = {
+  // 其它配置省略
+  rules: {
+    // key 为规则名，value 配置内容
+    "quotes": ["error", "single"],
+  }
+}
+```
+
+在 rules 对象中，`key` 一般为`规则名`，`value` 为具体的配置内容，在上述的例子中我们设置为一个数组，数组第一项为规则的 `ID`，第二项为`规则的配置`。
+
+这里主要看下规则 ID，可以设置如下值：
+
+- `off` 或 `0`: 表示关闭规则
+- `warn` 或 `1`: 表示开启规则，不过违背规则后只抛出 warning，而不会导致程序退出
+- `error` 或 `2`: 表示开启规则，不过违背规则后抛出 error，程序会退出
+
+当然，也可以直接将 `rules` 对象的 `value` 配置成 ID，如: `"no-cond-assign": "error"`
+
+
+
+**4、plugins 插件**
+
+ESLint 的 parser 基于`Acorn`实现，不能直接解析 TypeScript，需要指定 parser 选项为`@typescript-eslint/parser`才能兼容 TS 的解析。同理，ESLint 本身也没有内置 TypeScript 的代码规则，这个时候 ESLint 的插件系统就派上用场了。需要通过添加 ESLint 插件来增加一些特定的规则，比如添加`@typescript-eslint/eslint-plugin` 来拓展一些关于 TS 代码的规则，如下代码所示
+
+```js
+module.exports = {
+    "plugins": [
+        "@typescript-eslint",
+        "react"
+    ]
+}
+```
+
+
+
+需要注意的是，添加插件只是拓展了 ESLint 本身的规则集，但 ESLint 默认并**没有开启**这些规则的校验！如果要开启或者调整这些规则，需要在 rules 中进行配置，如:
+
+```js
+module.exports = {
+  // 开启一些 TS 规则
+  rules: {
+    '@typescript-eslint/ban-ts-comment': 'error',
+    '@typescript-eslint/no-explicit-any': 'warn',
+  }
+}
+```
+
+
+
+**5、extends 继承配置**
+
+extends 相当于`继承`另外一份 ESLint 配置，可以配置为一个字符串，也可以配置成一个字符串数组。主要分如下 3 种情况：
+
+1. 从 ESLint 本身继承
+2. 从类似 `eslint-config-xxx` 的 npm 包继承
+3. 从 ESLint 插件继承
+
+例如下面的：
+
+```js
+// .eslintrc.js
+module.exports = {
+   "extends": [
+     // 第1种情况 
+     "eslint:recommended",
+
+     // 第2种情况，一般配置的时候可以省略 `eslint-config`
+     "standard"
+
+     // 第3种情况，可以省略包名中的 `eslint-plugin`
+     // 格式一般为: `plugin:${pluginName}/${configName}`
+     "plugin:react/recommended"
+     "plugin:@typescript-eslint/recommended",
+   ]
+}
+```
+
+有了 extends 的配置，对于之前所说的 ESLint 插件中的繁多配置，我们就**不需要手动一一开启**了，通过 extends 字段即可自动开启插件中的推荐规则
+
+
+
+**6、env 和 globals**
+
+这两个配置分别表示`运行环境` 和 `全局变量`，在指定的运行环境中会预设一些全局变量，比如:
+
+```js
+module.exports = {
+    "env": {
+        "browser": true,
+        "node": true
+    }
+}
+```
+
+指定上述的 `env` 配置后便会启用浏览器和 Node.js 环境，这两个环境中的一些全局变量(如 `window`、`global` 等)会同时启用。
+
+
+
+有些全局变量是业务代码引入的第三方库所声明，这里就需要在`globals`配置中声明全局变量了。每个全局变量的配置值有 3 种情况：
+
+1. `"writable"`或者 `true`，表示变量可重写
+2. `"readonly"`或者`false`，表示变量不可重写
+3. `"off"`，表示禁用该全局变量
+
+这里使用 jquery 说明下：
+
+```js
+module.exports = {
+  "globals": {
+    // 不可重写
+    "$": false, 
+    "jQuery": false 
+  }
+}
+```
+
+
+
+#### 搭配 Prettier 使用
+
+虽然 ESLint 本身具备自动格式化代码的功能(`eslint --fix`)，但术业有专攻，ESLint 的主要优势在于`代码的风格检查并给出提示`，而在代码格式化这一块 Prettier 做的更加专业，因此 ESLint 结合 Prettier 一起使用是最优解
+
+
+
+安装 Prettier
+
+```shell
+pnpm i prettier -D
+```
+
+
+
+然后在项目根目录下创建 `.prettierrc.js` 文件，配置如下：
+
+```js
+// .prettierrc.js
+module.exports = {
+  printWidth: 120, //一行的字符数，如果超过会进行换行，默认为120
+  tabWidth: 2, // 一个 tab 代表几个空格数，默认为 2 个
+  useTabs: false, //是否使用 tab 进行缩进，默认为false，表示用空格进行缩减
+  singleQuote: true, // 字符串是否使用单引号，默认为 false，使用双引号
+  semi: true, // 行尾是否使用分号，默认为true
+  trailingComma: "none", // 是否使用尾逗号
+  bracketSpacing: true // 对象大括号直接是否有空格，默认为 true，效果：{ a: 1 }
+};
+```
+
+
+
+如果需要将`Prettier`集成到现有的`ESLint`工具中，首先安装两个工具包：
+
+```shell
+pnpm i eslint-config-prettier eslint-plugin-prettier -D
+```
+
+其中`eslint-config-prettier`用来覆盖 ESLint 本身的规则配置，而`eslint-plugin-prettier`则是用于让 Prettier 来接管`eslint --fix`即修复代码的能力。
+
+
+
+接着，在 `.eslintrc.cjs` 配置文件中接入 prettier 的相关工具链，如下：
+
+```js
+module.exports = {
+    "extends": [
+        // 接入 prettier 的规则
+        "prettier",
+        "plugin:prettier/recommended"
+    ],
+    "plugins": [
+        "prettier" // 加入 prettier 的 eslint 插件
+    ],
+    "rules": {
+        "prettier/prettier": "error", // 开启 prettier 自动修复的功能
+    }
+}
+```
+
+
+
+最后，在 `package.json` 中定义一个脚本
+
+```json
+{
+  "scripts": {
+    "lint": "eslint --ext .js,.jsx,.ts,.tsx --fix --quiet ./src",
+  }
+}
+```
+
+
+
+如果不想每次都手动执行这个命令，可以在`VSCode`中安装`ESLint`和`Prettier`这两个插件，并且在设置区中开启`Format On Save`
+
+![](./imgs/img18.png)
+
+这样，在`Ctrl + S`保存代码的时候，Prettier 便会自动帮忙修复代码格式
+
+
+
+#### 在 vite 开发环境使用 eslint
+
+除了安装编辑器插件，还可以通过 Vite 插件的方式在开发阶段进行 ESLint 扫描，以命令行的方式展示出代码中的规范问题，并能够直接定位到原文件。
+
+
+
+安装 `vite-plugin-eslint`
+
+```shell
+pnpm i vite-plugin-eslint -D
+```
+
+
+
+在  `vite.config.ts` 中接入
+
+```typescript
+import viteEslint from 'vite-plugin-eslint'
+
+export default defineConfig({
+  plugins: [
+    viteEslint()
+  ]
+})
+```
+
+此时，已经可以将 eslint 错误显示在控制台了
+
+![](./imgs/img19.png)
+
+
+
+> vite-plugin-eslint 这个插件采用另一个进程来运行 ESLint 的扫描工作，因此不会影响 Vite 项目的启动速度
 
 
 

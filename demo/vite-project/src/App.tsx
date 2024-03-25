@@ -1,12 +1,11 @@
-import PageHeader from '@components/page-header'
-import UnoCssCom from '@components/unocss-com'
-import StaticCom from '@components/static-com'
-import SvgPage from '@components/svg-page'
+import PageHeader from '@components/page-header';
+import UnoCssCom from '@components/unocss-com';
+import StaticCom from '@components/static-com';
+import SvgPage from '@components/svg-page';
 
-import './App.css'
+import './App.css';
 
 function App() {
-
   return (
     <div className="App">
       <PageHeader />
@@ -14,7 +13,7 @@ function App() {
       <StaticCom />
       <SvgPage />
     </div>
-  )
+  );
 }
 
-export default App
+export default App;

@@ -6,6 +6,7 @@ import UnoCSS from 'unocss/vite'
 import svgr from 'vite-plugin-svgr'
 import viteImagemin from 'vite-plugin-imagemin'
 import viteRestart from 'vite-plugin-restart' // 监听文件修改，自动重启 vite 服务
+import viteEslint from 'vite-plugin-eslint'
 import { createSvgIconsPlugin } from 'vite-plugin-svg-icons'
 
 // const isProd = process.env.NODE_ENV === 'production'
@@ -44,11 +45,12 @@ export default defineConfig({
             active: false,
           },
         ],
-      }
+      },
     }),
     createSvgIconsPlugin({
       iconDirs: [path.join(__dirname, 'src/assets/svgs')]
-    })
+    }),
+    viteEslint()
   ],
   // base: isProd ? CDN_URL : '/',
   server: {
