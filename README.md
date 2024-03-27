@@ -2010,6 +2010,145 @@ const esbuildPatchPlugin = {
 
 
 
+### Vite 的双引擎架构
+
+Vite 底层深度使用乐两个构建引擎——`Esbuild`和`Rollup`。下面来看下`Esbuild`和`Rollup`究竟在 Vite 中做了些什么。
+
+
+
+#### Vite 架构图
+
+Vite 的双引擎架构，并不是简单的：开发阶段使用 Esbuild，生产环境用 Rollup。下图就完整展示了 vite 的架构
+
+![](./imgs/img28.png)
+
+
+
+#### ESBuild 在 Vite 中的使用
+
+
+
+##### 1、依赖预构建（作为Bundle）工具
+
+![](./imgs/img29.png)
+
+首先是**开发阶段的依赖预构建**阶段。上面已经分析过，`node_modules` 中的依赖如果直接在 vite 中使用，会有：ESM 格式的兼容性问题和海量请求的问题。所以对于第三方依赖，在应用启动前要进行**打包**并且**转换为 ESM 格式**。
+
+Vite 1.x 版本中使用 Rollup 来做这件事情。但是相对于 ESBuild，性能相差实在太大了。如图：
+
+![](./imgs/img30.png)
+
+可以看出，效率是上百倍的差别。当然，ESBuild 也有一些缺点：
+
+- 不支持降级到 ES5 语法。这在低端浏览器会有问题
+- 不支持 `const enum` 等语法。这意味着单独使用这些语法在 esbuild 中会直接抛错
+- 不提供操作打包产物的接口，像 Rollup 中灵活处理打包产物的能力(如`renderChunk`钩子)在 Esbuild 当中完全没有
+- 目前暂时不支持自定义 Code Splitting 策略。传统的 Webpack 和 Rollup 都提供了自定义拆包策略的 API，而 Esbuild 并未提供，从而降级了拆包优化的灵活性
+
+虽然 ESBuild 有这么多局限性，但是在开发环境应用，是完全没问题的，可以极大提升性能。
+
+而在生产环境，基于稳定性考虑，vite 采用了功能更加丰富、生态更加成熟的 Rollup 作为依赖打包工具。
+
+
+
+##### 2、单文件编译——作为 TS 和 JSX 编译工具
+
+![](./imgs/img31.png)
+
+在依赖预构建阶段， Esbuild 作为 Bundler 的角色存在。而在 TS(X)/JS(X) 单文件编译上面，Vite 也使用 Esbuild 进行语法转译，也就是将 Esbuild 作为 Transformer 来用。
+
+
+
+也就是说，Esbuild 转译 TS 或者 JSX 的能力通过 Vite 插件提供，这个 Vite 插件在开发环境和生产环境都会执行，因此，可以得出下面这个结论：
+
+> Vite 已经将 Esbuild 的 Transformer 能力用到了生产环境。尽管如此，对于低端浏览器场景，Vite 仍然可以做到语法和 Polyfill 安全（这个后面再分析，其实就是转换用 esbuild，语法降级使用 babel）
+
+
+
+这部分能力用来替换原先 Babel 或者 TSC 的功能，因为无论是 Babel 还是 TSC都有性能问题。下面是一张对比图：
+
+![](./imgs/img32.png)
+
+可以看到，Esbuild Transfomer 能带来巨大的性能提升。
+
+但其自身也有局限性：**TS 中的类型检查问题**。这是因为 Esbuild 并没有实现 TS 的类型系统，在编译 `TS`(或者 `TSX`) 文件时仅仅抹掉了类型相关的代码，暂时没有能力实现类型检查。
+
+因此，在执行 build 构建的时候，会先执行 tsc，如图：
+
+![](./imgs/img33.png)
+
+
+
+##### 3、代码压缩---作为压缩工具
+
+> Vite 从 2.6 版本开始，就官宣默认使用 Esbuild 来进行生产环境的代码压缩，包括 JS 代码和 CSS 代码。
+
+![](./imgs/img34.png)
+
+从架构图中可以看到，在生产环境中 Esbuild 压缩器通过插件的形式融入到了 Rollup 的打包流程中
+
+传统的方式都是使用 Terser 这种 JS 开发的压缩器来实现，在 Webpack 或者 Rollup 中作为一个 Plugin 来完成代码打包后的压缩混淆的工作。但 Terser 其实很慢，主要有 2 个原因。
+
+1. 压缩这项工作涉及大量 AST 操作，并且在传统的构建流程中，AST 在各个工具之间无法共享，比如 Terser 就无法与 Babel 共享同一个 AST，造成了很多重复解析的过程
+2. JS 本身属于解释性 + JIT（即时编译） 的语言，对于压缩这种 CPU 密集型的工作，其性能远远比不上 Golang 这种原生语言
+
+因此，Esbuild 这种从头到尾**共享 AST** 以及**原生语言编写**的 Minifier 在性能上能够甩开传统工具的好几十倍。
+
+
+
+可以看下面这个实际大型库(`echarts`)的压缩性能[测试项目](https://link.juejin.cn/?target=https%3A%2F%2Fgithub.com%2Fprivatenumber%2Fminification-benchmarks):
+
+![](./imgs/img35.png)
+
+压缩一个大小为`3.2 MB`的库，Terser 需要耗费`8798 ms`，而 Esbuild 仅仅需要`361 ms`，压缩效率较 Terser 提升了二三十倍，并且产物的体积几乎没有劣化，因此 Vite 果断将其内置为默认的压缩方案。
+
+
+
+#### 构建基石---Rollup
+
+Rollup 是 Vite 用作生产环境打包的核心工具，也直接决定了 Vite 插件机制的设计。
+
+
+
+##### 生产环境 Bundle
+
+虽然 ESM 已经得到众多浏览器的原生支持，但生产环境做到完全`no-bundle`也不行，会有网络性能问题。为了在生产环境中也能取得优秀的产物性能，Vite 默认选择在生产环境中利用 `Rollup` 打包，并基于 Rollup 本身成熟的打包能力进行扩展和优化。主要包含 3 方面：
+
+1. CSS 代码分割。如果某个异步模块中引入了一些 CSS 代码，Vite 就会自动将这些 CSS 抽取出来生成单独的文件，提高线上产物的`缓存复用率`。
+
+2. 自动预加载。Vite 会自动为入口 chunk 的依赖自动生成预加载标签`<link rel="modulepreload">` ，如：
+
+   ```html
+   <head>
+     <!-- 省略其它内容 -->
+     <!-- 入口 chunk -->
+     <script type="module" crossorigin src="/assets/index.250e0340.js"></script>
+     <!--  自动预加载入口 chunk 所依赖的 chunk-->
+     <link rel="modulepreload" href="/assets/vendor.293dca09.js">
+   </head>
+   
+   ```
+
+   这种适当预加载的做法会让浏览器提前下载好资源，优化页面性能
+
+3. 异步 Chunk 加载优化。在异步引入的 Chunk 中，通常会有一些公用的模块，如现有两个异步引入的 Chunk: `A` 和 `B`，而且两者有一个公共依赖 C，如下图：
+
+   ![](./imgs/img36.png)
+
+   一般情况下，Rollup 打包之后，会先请求 A，然后浏览器在加载 A 的过程中才决定请求和加载 C，但 Vite 进行优化之后，请求 A 的同时会自动预加载 C，通过优化 Rollup 产物依赖加载方式节省了不必要的网络开销
+
+
+
+##### 兼容插件机制
+
+无论是开发阶段还是生产环境，Vite 都根植于 Rollup 的插件机制和生态，如下：
+
+![](./imgs/img37.png)
+
+在开发阶段，Vite 借鉴了 [WMR](https://link.juejin.cn/?target=https%3A%2F%2Fgithub.com%2Fpreactjs%2Fwmr) 的思路，自己实现了一个 `Plugin Container`，用来模拟 Rollup 调度各个 Vite 插件的执行逻辑，而 Vite 的插件写法完全兼容 Rollup，因此在生产环境中将所有的 Vite 插件传入 Rollup 也没有问题
+
+反过来说，Rollup 插件却不一定能完全兼容 Vite(这部分我们会在**插件开发**小节展开来说)。不过，目前仍然有不少 Rollup 插件可以直接复用到 Vite 中，你可以通过这个站点查看所有兼容 Vite 的 Rollup 插件: [vite-rollup-plugins.patak.dev/](https://link.juejin.cn/?target=https%3A%2F%2Fvite-rollup-plugins.patak.dev%2F) 
+
 
 
 
