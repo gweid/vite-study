@@ -2151,6 +2151,298 @@ Rollup 是 Vite 用作生产环境打包的核心工具，也直接决定了 Vit
 
 
 
+### ESBuild 功能使用及插件开发
+
+
+
+#### 为什么 ESBuild 性能好
+
+Esbuild 是由 Figma 的 CTO 「Evan Wallace」基于 Golang 开发的一款打包工具，相比传统的打包工具，主打性能优势，在构建速度上可以比传统工具快 `10~100` 倍。主要原因是：
+
+1. **使用 Golang 开发**。构建逻辑代码直接被编译为原生机器码，而不用像 JS 一样先代码解析为字节码，然后转换为机器码，大大节省了程序运行时间。
+2. **多核并行**。内部打包算法充分利用多核 CPU 优势，所有的步骤尽可能并行，这也是得益于 Go 当中多线程共享内存的优势。
+3. **从零造轮子**。 几乎没有使用任何第三方库，所有逻辑自己编写，大到 AST 解析，小到字符串的操作，保证极致的代码性能。
+4. **高效的内存利用**。Esbuild 中从头到尾尽可能地复用一份 AST 节点数据，而不用像 JS 打包工具中频繁地解析和传递 AST 数据（如 string -> TS -> JS -> string)，造成内存的大量浪费。
+
+
+
+#### 命令式调用
+
+比如：
+
+```json
+ "scripts": {
+    "build": "./node_modules/.bin/esbuild src/index.jsx --bundle --outfile=dist/out.js"
+ },
+```
+
+此时，直接执行 `pnpm run build` 即可
+
+但命令行的使用方式不够灵活，只能传入一些简单的命令行参数，稍微复杂的场景就不适用了，所以一般情况下我们还是会用代码调用的方式
+
+
+
+#### 代码式调用
+
+Esbuild 对外暴露了一系列的 API，主要包括两类: `Build API`和`Transform API`，我们可以在 Nodejs 代码中通过调用这些 API 来使用 Esbuild 的各种功能。
+
+
+
+##### Build API --- 项目打包
+
+`Build API`主要用来进行项目打包，包括`build`、`buildSync` 等方法
+
+首先，创建 build.js 文件，内容如下：
+
+```js
+const { build } = require('esbuild')
+
+async function runBuild() {
+  const result = await build({
+        // 当前项目根目录
+        absWorkingDir: process.cwd(),
+        // 入口文件列表，为一个数组
+        entryPoints: ["./src/index.jsx"],
+        // 打包产物目录
+        outdir: "dist",
+        // 是否需要打包，一般设为 true
+        bundle: true,
+        // 模块格式，包括`esm`、`commonjs`和`iife`
+        format: "esm",
+        // 是否开启自动拆包
+        splitting: true,
+        // 是否生成 SourceMap 文件
+        sourcemap: true,
+        // 是否生成打包的元信息文件
+        metafile: true,
+        // 是否进行代码压缩
+        minify: false,
+        // 是否将产物写入磁盘
+        write: true,
+        // Esbuild 内置了一系列的 loader，包括 base64、binary、css、dataurl、file、js(x)、ts(x)、text、json
+        // 针对一些特殊的文件，调用不同的 loader 进行加载
+        loader: {
+          '.png': 'base64',
+        }
+  })
+
+  console.log(result)
+}
+
+runBuild()
+```
+
+然后，执行 `node build.js,`可以在控制台发现如下日志信息
+
+![](./imgs/img38.png)
+
+以上就是 Esbuild 打包的元信息，这对编写插件扩展 Esbuild 能力非常有用
+
+
+
+接着，再观察下 dist 目录，发现打包产物和相应的 SourceMap 文件也已经成功写入磁盘
+
+![](./imgs/img39.png)
+
+
+
+其实`buildSync`方法的使用几乎相同，但并不推荐使用 `buildSync` 这种同步的 API，它们会导致两方面不良后果。一方面容易使 Esbuild 在当前线程阻塞，丧失`并发任务处理`的优势。另一方面，Esbuild 所有插件中都不能使用任何异步操作，这给`插件开发`增加了限制。
+
+
+
+##### Transform API --- 文件转译
+
+除了项目的打包功能之后，Esbuild 还专门提供了单文件编译的能力，即`Transform API`，与 `Build API` 类似，它也包含了同步和异步的两个方法，分别是`transformSync`和`transform`。
+
+
+
+在项目根目录下新建 `transform.js`
+
+```js
+const { transform } = require('esbuild')
+
+async function runTransform() {
+  const result = await transform(
+    "const getFullName = (firstName: string, lastName: string): string => firstName + lastName",
+    {
+      sourcemap: false,
+      loader: 'ts'
+    }
+  )
+
+  console.log(result)
+}
+
+runTransform()
+```
+
+执行 `node transform.js` ，控制台输出信息：
+
+![](./imgs/img40.png)
+
+
+
+#### ESBuild 插件开发
+
+在使用 Esbuild 的时候难免会遇到一些需要加上自定义插件的场景，并且 Vite 依赖预编译的实现中大量应用了 Esbuild 插件的逻辑，插件开发是 Esbuild 中非常重要的内容。
+
+
+
+##### ESBuild 插件的基本概念
+
+插件开发其实就是基于原有的体系结构中进行`扩展`和`自定义`。通过 Esbuild 插件可以扩展 Esbuild 原有的路径解析、模块加载等方面的能力，并在 Esbuild 的构建过程中执行一系列自定义的逻辑
+
+
+
+`Esbuild` 插件结构被设计为一个对象，里面有`name`和`setup`两个属性，`name`是插件的名称，`setup`是一个函数，其中入参是一个 `build` 对象，这个对象上挂载了一些钩子可自定义一些逻辑。以下是一个简单的`ESBuild`插件结构：
+
+```js
+const myPlugin = {
+  name: 'my-plugin',
+  setup(build) {
+    build.onResolve({ filter: /^env$/ }, args => ({
+
+    }))
+
+    build.onLoad({ filter: /.*/, namespace: 'env-ns' }, () => ({
+
+    }))
+  },
+}
+```
+
+
+
+##### 钩子函数
+
+
+
+###### onResolve 钩子和 onLoad 钩子
+
+在 Esbuild 插件中，`onResolve` 和 `onload`分别控制路径解析和模块内容加载的过程
+
+下面看一段代码
+
+```js
+// build 对象在上文的 setup 钩子已经引入，这里不再重复引入
+
+build.onResolve({ filter: /^env$/ }, args => ({
+  path: args.path,
+  namespace: 'env-ns',
+}));
+
+
+build.onLoad({ filter: /.*/, namespace: 'env-ns' }, () => ({
+  contents: JSON.stringify(process.env),
+  loader: 'json',
+}));
+```
+
+这两个钩子，都有两个参数：`Options` 和 `Callback`。
+
+
+
+先看 `Options` ，包含`filter`和`namespace`两个属性，
+
+- filter：必传，是一个正则表达式，决定了要过滤出的特征文件
+- namespace：选填，一般在 `onResolve` 钩子中的回调参数返回`namespace`属性作为标识，可以在`onLoad`钩子中通过 `namespace` 将模块过滤出来
+
+
+
+回调参数 `Callback`，它的类型根据不同的钩子会有所不同。相比于 Options，Callback 函数入参和返回值的结构复杂得多，涉及很多属性：
+
+下面是 `onResolve` 的参数及返回值
+
+```js
+build.onResolve({ filter: /^env$/ }, (args: onResolveArgs): onResolveResult => {
+
+}
+
+args 参数
+   - path        // 模块路径
+   - importer    // 父模块路径
+   - namespace   //  namespace 标识
+   - resolveDir  // 基准路径
+   - kind        // 导入方式，如 import、require
+   - pluginData  // 额外绑定的插件数据
+
+
+返回值
+   - errors: [] // 错误信息
+   - external: false // 是否需要 external
+   - namespace: 'env-ns' // namespace 标识
+   - path: args.path // 模块路径
+   - pluginData: null // 额外绑定的插件数据
+   - pluginName: 'xxx' // 插件名称
+   - sideEffects: false // 设置为 false，如果模块没有被用到，模块代码将会在产物中会删除。否则不会这么做
+   - suffix: '?xxx' // 添加一些路径后缀，如`?xxx`
+   - warnings: [] // 警告信息
+   - watchDirs: [] // 仅仅在 Esbuild 开启 watch 模式下生效
+   - watchFiles: [] // 告诉 Esbuild 需要额外监听哪些文件/目录的变化
+```
+
+下面是 `onLoad` 的参数及返回值
+
+```js
+build.onLoad({ filter: /.*/, namespace: 'env-ns' }, (args: OnLoadArgs): OnLoadResult => {
+
+}
+
+args 参数
+   - path        // 模块路径
+   - namespace   //  namespace 标识
+   - suffix      // 后缀信息
+   - pluginData  // 额外绑定的插件数据
+
+
+返回值
+   - contents: '省略内容' // 模块具体内容
+   - errors: [] // 错误信息
+   - loader: 'json' // 指定 loader，如`js`、`ts`、`jsx`、`tsx`、`json`等等
+   - pluginData: null // 额外绑定的插件数据
+   - pluginName: 'xxx' // 插件名称
+   - resolveDir: './dir' // 基准路径
+   - warnings: [] // 警告信息
+   - watchDirs: [] // 仅仅在 Esbuild 开启 watch 模式下生效
+   - watchFiles: [] // 告诉 Esbuild 需要额外监听哪些文件/目录的变化
+```
+
+
+
+###### 其它钩子
+
+在 build 对象中，除了`onResolve`和`onLoad`，还有`onStart`和`onEnd`两个钩子用来在构建开启和结束时执行一些自定义的逻辑
+
+```js
+const myPlugin = {
+  name: 'my-plugin',
+  setup(build) {
+    build.onStart(() => {
+      console.log('build started')
+    });
+    build.onEnd((buildResult) => {
+      if (buildResult.errors.length) {
+        return;
+      }
+      // 构建元信息
+      // 获取元信息后做一些自定义的事情，比如生成 HTML
+      console.log(buildResult.metafile)
+    })
+  },
+}
+```
+
+使用这些钩子，有两点需要注意：
+
+- onStart 的执行时机是在每次 build 的时候，包括触发 `watch` 或者 `serve`模式下的重新构建。
+- onEnd 钩子中如果要拿到 `metafile`，必须将 Esbuild 的构建配置中`metafile`属性设为 `true`。
+
+
+
+#### 自定义 esbuild 插件
+
+
+
 
 
 

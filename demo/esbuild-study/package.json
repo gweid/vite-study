@@ -1,0 +1,17 @@
+{
+  "name": "esbuild-study",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "build:command": "./node_modules/esbuild/bin/esbuild src/index.jsx --bundle --outfile=dist/out.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "esbuild": "^0.20.2",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  }
+}
