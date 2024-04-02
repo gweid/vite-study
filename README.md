@@ -2439,7 +2439,108 @@ const myPlugin = {
 
 
 
-#### 自定义 esbuild 插件
+#### esbuild 自定义 HTML 构建插件
+
+Esbuild 作为一个前端打包工具，本身并不具备 HTML 的构建能力。也就是说，当它把 js/css 产物打包出来的时候，并不意味着前端的项目可以直接运行了，还需要一份对应的入口 HTML 文件。这份 HTML 文件当然可以手写一个，但手写显得比较麻烦，尤其是产物名称带哈希值的时候，每次打包完都要替换路径。此时就可以通过 esbuild 插件完成
+
+
+
+> Utils.js 工具
+
+```js
+
+const createScript = (src) => `<script type="module" src="${src}"></script>`;
+
+const createLink = (src) => `<link rel="stylesheet" href="${src}"></link>`;
+
+const generateHTML = (scripts, links) => `
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Esbuild App</title>
+  ${links.join("\n")}
+</head>
+
+<body>
+  <div id="root"></div>
+  ${scripts.join("\n")}
+</body>
+
+</html>
+`;
+
+module.exports = { createLink, createScript, generateHTML };
+```
+
+
+
+> Esbuild-html-plugin 插件
+
+```js
+const fs = require('fs/promises');
+const path = require('path');
+const { createScript, createLink, generateHTML } = require('./utils');
+
+module.exports = () => {
+  return {
+    name: "esbuild:html",
+    setup(build) {
+      build.onEnd(async (res) => {
+        if (res.errors.length) {
+          return
+        }
+
+        const { metafile } = res
+
+        const scripts = []
+        const links = []
+
+        if (metafile) {
+          const { outputs } = metafile
+          const assets = Object.keys(outputs)
+
+          // 找到相关的静态资源
+          assets.forEach((asset) => {
+            if (asset.endsWith('.js')) {
+              scripts.push(createScript(asset))
+            } else if (asset.endsWith('.css')) {
+              links.push(createLink(asset))
+            }
+          })
+
+          // 拼接 html
+          const templateContent = generateHTML(scripts, links);
+          // HTML 写入磁盘
+          const templatePath = path.join(process.cwd(), "index.html");
+          await fs.writeFile(templatePath, templateContent);
+        }
+      })
+    },
+  };
+}
+```
+
+
+
+使用
+
+```js
+const { build } = require('esbuild')
+const EsbuildHtmlPlugin = require('./plugins/html-plugin')
+
+async function runBuild() {
+  const result = await build({
+        plugins: [EsbuildHtmlPlugin()]
+  })
+
+  console.log(result)
+}
+
+runBuild()
+```
 
 
 

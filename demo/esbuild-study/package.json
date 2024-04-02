@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "build:command": "./node_modules/esbuild/bin/esbuild src/index.jsx --bundle --outfile=dist/out.js"
+    "build:command": "./node_modules/esbuild/bin/esbuild src/index.jsx --bundle --outfile=dist/out.js",
+    "build": "node ./build.js"
   },
   "keywords": [],
   "author": "",

@@ -1,4 +1,5 @@
 const { build } = require('esbuild')
+const EsbuildHtmlPlugin = require('./plugins/html-plugin')
 
 async function runBuild() {
   const result = await build({
@@ -26,7 +27,8 @@ async function runBuild() {
         // 针对一些特殊的文件，调用不同的 loader 进行加载
         loader: {
           '.png': 'base64',
-        }
+        },
+        plugins: [EsbuildHtmlPlugin()]
   })
 
   console.log(result)
