@@ -15,8 +15,9 @@ const viteSvgrPlugin = (options: IOptions = {}): Plugin => {
       if (!id.endsWith('.svg')) return code
 
       const { transform: transformSvg } = await import('@svgr/core')
-      const { default: jsx } = await import('@svgr/plugin-jsx');
-      const svg = await fs.promises.readFile(id, 'utf8');
+      const { default: jsx } = await import('@svgr/plugin-jsx')
+
+      const svg = await fs.promises.readFile(id, 'utf8')
 
       const svgResult = await transformSvg(
         svg,
