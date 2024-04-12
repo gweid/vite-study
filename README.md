@@ -2598,6 +2598,394 @@ runBuild()
 
 
 
+### 开发 Vite 插件
+
+ Vite 的插件机制是基于 Rollup 来设计的，Vite **开发阶段**会模拟 Rollup 的行为，调用一系列与 Rollup 兼容的钩子，主要分为三个阶段：
+
+- **服务器启动阶段**: `options`和`buildStart`钩子会在服务启动时被调用。
+- **请求响应阶段**: 当浏览器发起请求时，Vite 内部依次调用`resolveId`、`load`和`transform`钩子。
+- **服务器关闭阶段**: Vite 会依次执行`buildEnd`和`closeBundle`钩子。
+
+除了以上钩子，其他 Rollup 插件钩子(如`moduleParsed`、`renderChunk`)均不会在 Vite **开发阶段**调用。而生产环境下，由于 Vite 直接使用 Rollup，Vite 插件中所有 Rollup 的插件钩子都会生效。
+
+
+
+#### 独有 Hook
+
+实际上 Vite 的插件机制也包含了自己独有的一部分，与 Rollup 的各个插件 Hook 并非完全兼容。
+
+下面来看下 Vite 中特有的一些 Hook，这些 Hook 只会在 Vite 内部调用，而放到 Rollup 中会被直接忽略。
+
+
+
+##### config
+
+Vite 在读取完配置文件（即`vite.config.ts`）之后，会拿到用户导出的配置对象，然后执行 config 钩子。在这个钩子里面，可以对配置文件导出的对象进行自定义的操作
+
+```js
+module.exports = () => {
+  return {
+    name: 'vite-plugin-edit-config',
+    config: () => ({
+      alias: {
+        react: require.resolve('react')
+      }
+    })
+  }
+}
+```
+
+官方推荐的姿势是在 config 钩子中返回一个配置对象，这个配置对象会和 Vite 已有的配置进行**深度的合并**。不过也可以通过钩子的入参拿到 config 对象进行自定义的修改
+
+```js
+const mutateConfigPlugin = () => ({
+  name: 'mutate-config',
+  // command 为 `serve`(开发环境) 或者 `build`(生产环境)
+  config(config, { command }) {
+    // 生产环境中修改 root 参数
+    if (command === 'build') {
+      config.root = __dirname;
+    }
+  }
+})
+```
+
+
+
+##### configResolved
+
+Vite 在解析完配置之后会调用`configResolved`钩子，这个钩子一般用来记录最终的配置信息，而不建议再修改配置，用法如下图所示:
+
+```js
+module.exports = () => {
+  let config
+
+  return {
+    name: 'vite-plugin-read-config',
+    configResolved(resolvedConfig) {
+      config = resolvedConfig // 记录最终配置
+    },
+    // 在其他钩子中可以访问到配置
+    transform(code, id) {
+      console.log(config);
+    }
+  }
+}
+```
+
+
+
+##### configureServer
+
+这个钩子仅在**开发阶段**会被调用，用于扩展 Vite 的 Dev Server，一般用于增加自定义 server 中间件，如下代码所示:
+
+```js
+module.exports = () => {
+  return {
+    name: 'vite-plugin-configure-server',
+    configureServer(server) {
+      // 方式1: 在 Vite 内置中间件之前执行
+      server.middlewares.use((req, res, next) => {
+        // 自定义请求处理逻辑
+      })
+
+      // 方式2: 在 Vite 内置中间件之后执行 
+      return () => {
+        server.middlewares.use((req, res, next) => {
+          // 自定义请求处理逻辑
+        })
+      }
+    }
+  }
+}
+```
+
+
+
+##### transformIndexHtml
+
+这个钩子用来灵活控制 HTML 的内容，可以拿到原始的 html 内容后进行任意的转换：
+
+```js
+// 进行 html 替换
+module.exports = () => {
+  return {
+    name: 'vite-plugin-html-transform',
+    transformIndexHtml(html) {
+      return html.replace(
+        /<title>(.*?)</title>/,
+        `<title>换了个标题</title>`
+      )
+    }
+  }
+}
+
+
+// 可以返回如下的对象结构，一般用于添加某些标签
+module.exports = () => {
+  return {
+    name: 'vite-plugin-html-transform',
+    transformIndexHtml(html) {
+      return {
+        html,
+        // 注入标签
+        tag: [
+          {
+            // 放到 body 末尾，可取值还有`head`|`head-prepend`|`body-prepend`，顾名思义
+            injectTo: 'body',
+            // 标签属性定义
+            attrs: { type: 'module', src: './index.ts' },
+            // 标签名
+            tag: 'script',
+          }
+        ]
+      }
+    }
+  }
+}
+```
+
+
+
+##### handleHotUpdate
+
+这个钩子会在 Vite 服务端处理热更新时被调用，可以在这个钩子中拿到热更新相关的上下文信息，进行热更模块的过滤，或者进行自定义的热更处理。下面是一个简单的例子:
+
+```js
+module.exports = () => {
+  return {
+    name: 'vite-plugin-hot-update',
+    async handleHotUpdate(ctx) {
+      // 需要热更的文件
+      console.log(ctx.file)
+      // 需要热更的模块，如一个 Vue 单文件会涉及多个模块
+      console.log(ctx.modules)
+      // 时间戳
+      console.log(ctx.timestamp)
+      // Vite Dev Server 实例
+      console.log(ctx.server)
+      // 读取最新的文件内容
+      console.log(await read())
+      // 自行处理 HMR 事件
+      ctx.server.ws.send({
+        type: 'custom',
+        event: 'custom-update',
+        data: { a: 1 }
+      })
+      return []
+    }
+  }
+}
+
+
+
+
+// 前端代码中加入
+if (import.meta.hot) {
+  import.meta.hot.on('custom-update', (data) => {
+    // 执行自定义更新
+    // { a: 1 }
+    console.log(data)
+    window.location.reload();
+  })
+}
+```
+
+
+
+##### 总结
+
+以上就是 Vite 独有的五个钩子，总结一下：
+
+- `config`: 用来进一步修改配置。
+- `configResolved`: 用来记录最终的配置信息。
+- `configureServer`: 用来获取 Vite Dev Server 实例，添加中间件。
+- `transformIndexHtml`: 用来转换 HTML 的内容。
+- `handleHotUpdate`: 用来进行热更新模块的过滤，或者进行自定义的热更新处理。
+
+
+
+#### 插件 Hook 执行顺序
+
+通过一份配置查看 hook 执行顺序
+
+```typescript
+export default function testHookPlugin() {
+  return {
+    name: 'test-hooks-plugin',
+    // Vite 独有钩子
+    config() {
+      console.log('config');
+    },
+    // Vite 独有钩子
+    configResolved() {
+      console.log('configResolved');
+    },
+    // 通用钩子
+    options(opts: any) {
+      console.log('options');
+      return opts;
+    },
+    // Vite 独有钩子
+    configureServer() {
+      console.log('configureServer');
+      setTimeout(() => {
+        // 手动退出进程
+        process.kill(process.pid, 'SIGTERM');
+      }, 3000)
+    },
+    // 通用钩子
+    buildStart() {
+      console.log('buildStart');
+    },
+    // 通用钩子
+    buildEnd() {
+      console.log('buildEnd');
+    },
+    // 通用钩子
+    closeBundle() {
+      console.log('closeBundle');
+    }
+  }
+}
+```
+
+![](./imgs/img44.png)
+
+
+
+因此，可以梳理出 Vite 插件的执行顺序
+
+![](./imgs/img45.png)
+
+- 服务启动阶段: `config`、`configResolved`、`options`、`configureServer`、`buildStart`
+- 请求响应阶段: 如果是 `html` 文件，仅执行`transformIndexHtml`钩子；对于非 HTML 文件，则依次执行`resolveId`、`load`和`transform`钩子。
+- 热更新阶段: 执行`handleHotUpdate`钩子。
+- 服务关闭阶段: 依次执行`buildEnd`和`closeBundle`钩子。
+
+
+
+#### 插件应用位置
+
+默认情况下 Vite 插件同时被用于开发环境和生产环境，可以通过`apply`属性来决定应用场景
+
+```typescript
+{
+  // 'serve' 表示仅用于开发环境，'build'表示仅用于生产环境
+  apply: 'serve'
+}
+```
+
+`apply`参数还可以配置成一个函数，进行更灵活的控制:
+
+```typescript
+apply(config, { command }) {
+  // 只用于非 SSR 情况下的生产环境构建
+  return command === 'build' && !config.build.ssr
+}
+```
+
+同时，你也可以通过`enforce`属性来指定插件的执行顺序:
+
+```typescript
+{
+  // 默认为`normal`，可取值还有`pre`和`post`
+  enforce: 'pre'
+}
+```
+
+
+
+综上，vite 插件执行顺序为：
+
+![](./imgs/img46.png)
+
+由上图，Vite 会依次执行如下的插件：
+
+- Alias (路径别名)相关的插件。
+- ⭐️ 带有 `enforce: 'pre'` 的用户插件。
+- Vite 核心插件。
+- ⭐️ 没有 enforce 值的用户插件，也叫`普通插件`。
+- Vite 生产环境构建用的插件。
+- ⭐️ 带有 `enforce: 'post'` 的用户插件。
+- Vite 后置构建插件(如压缩插件)。
+
+
+
+#### vite 实现 svg 组件形式加载插件
+
+在开发过程中，希望能将 svg 当做一个组件来引入，这样可以很方便地修改 svg 的各种属性，相比于`img`标签的引入方式也更加优雅。但 Vite 本身并不支持将 svg 转换为组件的代码，需要通过自定义插件来实现。
+
+
+
+可以参考：[vite-plugin-svgr](https://github.com/pd4d10/vite-plugin-svgr/blob/main/src/index.ts) 的实现
+
+
+
+下面就实战下，写一个 Vite 插件，实现在 React 项目能够通过组件方式来使用 svg 资源。
+
+
+
+安装相关依赖
+
+```shell
+pnpm i resolve @svgr/core -D
+```
+
+
+
+然后，梳理下需求：用户通过传入`defaultExport`可以控制 svg 资源的默认导出
+
+- 当 `defaultExport`为 `component`，当做组件来使用，即
+
+  ```tsx
+  import Logo from './Logo.svg'
+  
+  // 在组件中直接使用
+  <Logo />
+  ```
+
+- 当`defaultExports`为`url`，默认当做 url 使用，如果需要用作组件，可以通过`具名导入`的方式来支持
+
+  ```tsx
+  import logoUrl, { ReactComponent as Logo } from './logo.svg';
+  
+  // url 使用
+  <img src={logoUrl} />
+  // 组件方式使用
+  <Logo />
+  ```
+
+
+
+根据需求，整理插件思路，主要逻辑在 `transform`钩子中完成
+
+1. 根据 id 入参过滤出 svg 资源
+2. 读取 svg 文件内容
+3. 利用 `@svgr/core` 将 svg 转换为 React 组件代码
+4. 处理默认导出为 url 的情况
+5. 将组件的 jsx 代码转译为浏览器可运行的代码
+
+
+
+实现代码：
+
+```typescript
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
