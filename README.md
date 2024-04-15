@@ -2971,8 +2971,142 @@ pnpm i resolve @svgr/core -D
 实现代码：
 
 ```typescript
+import * as fs from 'fs'
+import { Plugin, transformWithEsbuild } from 'vite'
 
+interface IOptions {
+  exportType?: 'url' | 'component'
+}
+
+const viteSvgrPlugin = (options: IOptions = {}): Plugin => {
+  const { exportType = 'component' } = options
+
+  return {
+    name: 'vite-plugin-svgr',
+    async transform(code, id) {
+      // 1、根据 id 入参过滤出 svg 资源
+      if (!id.endsWith('.svg')) return code
+
+      const { transform: transformSvg } = await import('@svgr/core')
+      const { default: jsx } = await import('@svgr/plugin-jsx')
+
+      // 2、读取 svg 文件内容
+      const svg = await fs.promises.readFile(id, 'utf8')
+
+      // 3、使用 `@svgr/core` 将 svg 转换为 React 组件代码
+      const svgResult = await transformSvg(
+        svg,
+        {},
+        { caller: 
+          { 
+            defaultPlugins: [jsx]
+          }
+        }
+      )
+
+      // 4、处理默认导出为 url 的情况
+      let componentCode = svgResult
+
+      // 4.1、加上 Vite 默认的 `export default 资源路径`
+      if (exportType === 'url') {
+        componentCode += code
+        componentCode = componentCode.replace(
+          "export default ReactComponent",
+          "export { ReactComponent }"
+        )
+      }
+
+      // 5、利用 esbuild，将组件中的 jsx 代码转译为浏览器可运行的代码;
+      const result = await transformWithEsbuild(
+        componentCode,
+        id,
+        { loader: 'jsx' }
+      )
+
+      return {
+        code: result.code,
+        map: null
+      }
+    }
+  }
+}
+
+export default viteSvgrPlugin
 ```
+
+ 
+
+使用插件：
+
+1、引用插件
+
+```typescript
+import { defineConfig } from 'vite'
+import vitePluginSvgr from './plugins/vite-plugin-svgr'
+
+
+// https://vitejs.dev/config/
+export default defineConfig({
+  plugins: [
+    vitePluginSvgr()
+  ],
+})
+```
+
+2、在项目中使用组件方式引用 svg
+
+```tsx
+import ReactLogo from './assets/react.svg'
+
+function App() {
+  return (
+    <>
+      <div><ReactLogo /></div>
+      <h1>Vite + React</h1>
+    </>
+  )
+}
+
+export default App
+```
+
+启动项目，可以看到效果
+
+![](./imgs/img47.png)
+
+
+
+#### 调试插件
+
+在开发调试插件的过程，官方推荐在本地装上`vite-plugin-inspect`插件，并在 Vite 中使用它:
+
+```typescript
+import { defineConfig } from 'vite'
+import inspect from 'vite-plugin-inspect'
+
+// https://vitejs.dev/config/
+export default defineConfig({
+  plugins: [
+    inspect()
+  ]
+})
+```
+
+
+
+这样启动项目，会多一个地址：
+
+![](./imgs/img48.png)
+
+
+
+然后可以通过这个地址来查看各个模块的编译结果：
+
+![](./imgs/img49.png)
+
+点击特定文件，可以看到这个模块经过各个插件处理后的中间结果：
+
+![](./imgs/img50.png)
 
 
 
