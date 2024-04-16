@@ -3112,23 +3112,320 @@ export default defineConfig({
 
 
 
+### vite 的 HMR
+
+HMR 的全称叫做`Hot Module Replacement`，即`模块热替换`或者`模块热更新`。在计算机领域当中也有一个类似的概念叫`热插拔`，比如经常使用的 USB 设备就是一个典型的代表，当插入 U 盘的时候，系统驱动会加载在新增的 U 盘内容，不会重启系统，也不会修改系统其它模块的内容。HMR 的作用其实一样，就是在页面模块更新的时候，直接把**页面中发生变化的模块替换为新的模块**，同时不会影响其它模块的正常运作。
+
+通过 HMR 的技术我们就可以实现`局部刷新`和`状态保存。`
 
 
 
+#### Vite 的 HMR 定义
+
+Vite 作为一个完整的构建工具，本身实现了一套 HMR 系统，值得注意的是，这套 HMR 系统基于原生的 ESM 模块规范来实现，在文件发生改变时 Vite 会侦测到相应 ES 模块的变化，从而触发相应的 API，实现局部的更新。
+
+Vite 的 HMR API 设计也并非空穴来风，它基于一套完整的 [ESM HMR 规范](https://link.juejin.cn/?target=https%3A%2F%2Fgithub.com%2Fwithastro%2Fesm-hmr)来实现，这个规范由同时期的 no-bundle 构建工具 Snowpack、WMR 与 Vite 一起制定，是一个比较通用的规范。
 
 
 
+HMR API 的类型定义：
+
+```typescript
+interface ImportMeta {
+  readonly hot?: {
+    readonly data: any
+    accept(): void
+    accept(cb: (mod: any) => void): void
+    accept(dep: string, cb: (mod: any) => void): void
+    accept(deps: string[], cb: (mods: any[]) => void): void
+    prune(cb: () => void): void
+    dispose(cb: (data: any) => void): void
+    decline(): void
+    invalidate(): void
+    on(event: string, cb: (...args: any[]) => void): void
+  }
+}
+```
+
+`import.meta`对象为现代浏览器原生的一个内置对象，Vite 所做的事情就是在这个对象上的 `hot` 属性中定义了一套完整的属性和方法。因此，在 Vite 当中，你就可以通过`import.meta.hot`来访问关于 HMR 的这些属性和方法，比如`import.meta.hot.accept()`。
 
 
 
+#### 模块更新时逻辑：hot.accept
+
+在 `import.meta.hot` 对象上有一个非常关键的方法`accept`，因为它决定了 Vite 进行热更新的边界。
+
+accept 用来**接受模块更新**的。 一旦 Vite 接受了这个更新，当前模块就会被认为是 HMR 的边界。会有三种情况：
+
+- 接受**自身模块**的更新
+- 接受**某个子模块**的更新
+- 接受**多个子模块**的更新
+
+三种情况分别对应 accept 方法三种不同的使用方式
 
 
 
+##### 1、接受**自身模块**的更新
+
+当模块接受自身的更新时，则当前模块会被认为 HMR 的边界。也就是说，除了当前模块，其他的模块均未受到任何影响。
 
 
 
+例子：有 html 文件，如下：
+
+```html
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vite + React + TS</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <p>
+      count: <span id="count">0</span>
+    </p>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+```
+
+这份 html 文件引入了 `/src/main.ts` 这个文件，内容如下：
+
+```ts
+import { render } from './render';
+import { initState } from './state';
+
+render();
+initState();
+```
+
+文件依赖了`render.ts`和`state.ts`，前者负责渲染文本内容，而后者负责记录当前的页面状态
+
+> render.ts
+
+```ts
+export const render = () => {
+  const appEle = document.getElementById('root')!
+  appEle.innerHTML = `
+    <h1>vite hmr</h1>
+    <p>This is vite hmr</p>
+  `
+}
+```
+
+> state.ts
+
+```ts
+export const initState = () => {
+  let count = 0;
+  setInterval(() => {
+    let countEle = document.getElementById('count');
+    countEle!.innerText =  ++count + '';
+  }, 1000);
+}
+```
 
 
+
+执行 pnpm dev 启动项目，页面效果如下：
+
+![](./imgs/img51.png)
+
+每隔一秒钟，`count`值会加一。现在改动一下 `render.ts` 的渲染内容，比如增加一些文本:
+
+```
+export const render = () => {
+  const appEle = document.getElementById('root')!
+  appEle.innerHTML = `
+    <h1>vite hmr</h1>
++   <p>This is vite hmr  增加测试文本</p>
+  `
+}
+```
+
+可以发现，页面的计数被清零了
+
+![](./imgs/img52.png)
+
+同时，查看控制台，有如下输出：
+
+```shell
+[vite] page reload src/render.ts
+```
+
+可以看出，当 `render.ts` 模块发生变更时，Vite 发现并没有 HMR 相关的处理，然后直接刷新页面了。
+
+
+
+现在，在 render.ts 中加上 hmr 相关代码：
+
+```ts
+export const render = () => {
+  const appEle = document.getElementById('root')!
+  appEle.innerHTML = `
+    <h1>vite hmr</h1>
+    <p>This is vite hmr 增加测试文本</p>
+  `
+}
+
++ if (import.meta.hot) {
++   import.meta.hot.accept((mod: any) => mod.render())
++ }
+```
+
+
+
+此时，再修改文字，发现页面计数器没有被清空
+
+![](./imgs/img53.png)
+
+并且控制台输出
+
+```shell
+[vite] hmr update /src/render.ts
+```
+
+
+
+##### 2、接受依赖模块的更新
+
+上面，`main`模块依赖`render` 模块，也就是说，`main`模块是`render`父模块，那么也可以在 `main` 模块中接受`render`模块的更新，此时 HMR 边界就是`main`模块了。
+
+
+
+改动：
+
+- 首先，将 render 模块的 hmr 相关代码删除
+
+  ```ts
+  - if (import.meta.hot) {
+  -   import.meta.hot.accept((mod) => mod.render())
+  - }
+  ```
+
+- 然后，在 main 模块增加代码
+
+  ```ts
+  import { render } from './render';
+  import { initState } from './state';
+  
+  render();
+  initState();
+  
+  + if(import.meta.hot) {
+  +   import.meta.hot.accept('./render.ts', (newModule: any) => {
+  +     newModule.render()
+  +   })
+  + }
+  ```
+
+同样是调用 accept 方法，与之前不同的是，第一个参数传入一个依赖的路径，也就是`render`模块的路径，这就相当于告诉 Vite: 我监听了 `render` 模块的更新，当它的内容更新的时候，请把最新的内容传给我。同样的，第二个参数中定义了模块变化后的回调函数，这里拿到了 `render` 模块最新的内容，然后执行其中的渲染逻辑，让页面展示最新的内容。
+
+
+
+此时，改动 render 模块，同样可以进行热更新
+
+![](./imgs/img54.png)
+
+
+
+##### 3、接受多个子模块非更新
+
+父模块可以接受多个子模块的更新，当其中任何一个子模块更新之后，父模块会成为 HMR 边界。
+
+上面的例子，更改 main 模块代码：
+
+```ts
+import { render } from './render';
+import { initState } from './state';
+
+render();
+initState();
+
++ if(import.meta.hot) {
++  import.meta.hot.accept(['./render.ts', './state.ts'], (modules: any) => {
++    console.log(modules)
++  })
++ }
+```
+
+通过 accept 方法接受了`render`和`state`两个模块的更新。改动一下某一个模块的代码，观察一下回调中`modules`的打印内容，例如改动了 render 模块
+
+![](./imgs/img55.png)
+
+可以看到 Vite 回调传来的参数`modules`其实是一个数组，和第一个参数声明的子模块数组一一对应。因此`modules`数组第二个元素是 `undefined`，表示`render`模块并没有发生变化，第一个元素为一个 Module 对象，也就是经过变动后render模块的最新内容。
+
+因此：
+
+```ts
+import { render } from './render';
+import { initState } from './state';
+
+render();
+initState();
+
+if(import.meta.hot) {
+  import.meta.hot.accept(['./render.ts', './state.ts'], (modules: any) => {
+    const [renderModule, stateModule] = modules
+    if (renderModule) {
+      renderModule.render()
+    }
+    if (stateModule) {
+      stateModule.render()
+    }
+  })
+}
+```
+
+
+
+#### import.meta 其它方法
+
+##### 1、模块销毁时逻辑：import.meta.dispose
+
+在模块更新、旧模块需要销毁时需要做的一些事情，基本用法：
+
+```ts
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    console.log('销毁了')
+  })
+}
+```
+
+
+
+##### 2、共享数据：import.meta.data
+
+这个属性用来在不同的模块实例间共享一些数据
+
+例如，在 main 模块:
+
+```ts
+if (import.meta.hot) {
++  // 初始化 count
++  if (!import.meta.hot.data.count) {
++    import.meta.hot.data.count = 0;
++  }
+}
+```
+
+然后在 render 模块，可以通过 `import.meta.hot?.data ` 方式拿到值
+
+
+
+##### 3、限制模块不可热更：import.meta.hot.decline
+
+方法调用之后，相当于表示此模块不可热更新，当模块更新时会强制进行页面刷新。
+
+
+
+##### 4、强制刷新页面：import.meta.hot.invalidate
+
+用来强制刷新页面
 
 
 
