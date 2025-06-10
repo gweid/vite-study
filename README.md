@@ -8,8 +8,6 @@ vite 学习总结
 
 
 
-
-
 ## 前言
 
 前端工程的痛点：
@@ -495,8 +493,6 @@ last 2 versions,not dead
 
 
 
-
-
 #### CSS 原子化框架
 
 在目前的社区当中，CSS 原子化框架主要包括`Tailwind CSS` 和 `Windi CSS`。
@@ -624,7 +620,11 @@ document.getElementById('hero-img').src = '../../assets/c.png'
 
 
 
-在 vite 中，其实已经内置了这个能力，只需要正常引入即可，但是如果需要通过别名前缀引入，俺么需要添加 `alias`
+在 vite 中，其实已经内置了这个能力，只需要正常引入即可
+
+
+
+但是如果需要通过别名前缀引入，那么需要添加 `alias`
 
 ```typescript
 // 如果类型报错，需要安装 @types/node: pnpm i @types/node -D
@@ -754,7 +754,7 @@ export default StaticCom
 
 Vite 中已经内置了对于 JSON 文件的解析，底层使用`@rollup/pluginutils` 的 `dataToEsm` 方法将 JSON 对象转换为一个包含各种具名导出的 ES 模块。
 
-使用方式
+使用方式：直接像 js 那样使用
 
 ```typescript
 import { version } from '../../../package.json'
@@ -1670,7 +1670,7 @@ pnpm i lint-staged -D
 
   "lint-staged": {
     "**/*.{js,jsx,tsx,ts}": [
-      "npm run lint:script",
+      "npm run lint",
       "git add ."
     ],
     "**/*.{scss}": [
@@ -1734,7 +1734,13 @@ module.exports = {
 
 
 
-接下来将`commitlint`的功能集成到 Husky 的钩子当中
+接下来将`commitlint`的功能集成到 Husky 的钩子当中。在终端执行如下命令即可：
+
+```shell
+npx husky add .husky/commit-msg "npx --no-install commitlint -e $HUSKY_GIT_PARAMS"
+```
+
+可以发现在`.husky`目录下多出了`commit-msg`脚本文件，表示`commitlint`命令已经成功接入到 husky 的钩子当中
 
 
 
@@ -2012,7 +2018,7 @@ const esbuildPatchPlugin = {
 
 ### Vite 的双引擎架构
 
-Vite 底层深度使用乐两个构建引擎——`Esbuild`和`Rollup`。下面来看下`Esbuild`和`Rollup`究竟在 Vite 中做了些什么。
+Vite 底层深度使用两个构建引擎——`Esbuild`和`Rollup`。下面来看下`Esbuild`和`Rollup`究竟在 Vite 中做了些什么。
 
 
 
@@ -2024,7 +2030,7 @@ Vite 的双引擎架构，并不是简单的：开发阶段使用 Esbuild，生�
 
 
 
-#### ESBuild 在 Vite 中的使用
+#### 性能利器---ESBuild
 
 
 
@@ -2055,7 +2061,7 @@ Vite 1.x 版本中使用 Rollup 来做这件事情。但是相对于 ESBuild，�
 
 ![](./imgs/img31.png)
 
-在依赖预构建阶段， Esbuild 作为 Bundler 的角色存在。而在 TS(X)/JS(X) 单文件编译上面，Vite 也使用 Esbuild 进行语法转译，也就是将 Esbuild 作为 Transformer 来用。
+在依赖预构建阶段， Esbuild 作为 Bundler 的角色存在。而在 TS(X) / JS(X) 单文件编译上面，Vite 也使用 Esbuild 进行语法转译，也就是将 Esbuild 作为 Transformer 来用。
 
 
 
@@ -2104,6 +2110,10 @@ Vite 1.x 版本中使用 Rollup 来做这件事情。但是相对于 ESBuild，�
 
 
 
+总的来说，Vite 将 Esbuild 作为自己的性能利器，将 Esbuild 各个垂直方向的能力(`Bundler`、`Transformer`、`Minifier`)利用的淋漓尽致，给 Vite 的高性能提供了有利的保证
+
+
+
 #### 构建基石---Rollup
 
 Rollup 是 Vite 用作生产环境打包的核心工具，也直接决定了 Vite 插件机制的设计。
@@ -2147,7 +2157,7 @@ Rollup 是 Vite 用作生产环境打包的核心工具，也直接决定了 Vit
 
 在开发阶段，Vite 借鉴了 [WMR](https://link.juejin.cn/?target=https%3A%2F%2Fgithub.com%2Fpreactjs%2Fwmr) 的思路，自己实现了一个 `Plugin Container`，用来模拟 Rollup 调度各个 Vite 插件的执行逻辑，而 Vite 的插件写法完全兼容 Rollup，因此在生产环境中将所有的 Vite 插件传入 Rollup 也没有问题
 
-反过来说，Rollup 插件却不一定能完全兼容 Vite(这部分我们会在**插件开发**小节展开来说)。不过，目前仍然有不少 Rollup 插件可以直接复用到 Vite 中，你可以通过这个站点查看所有兼容 Vite 的 Rollup 插件: [vite-rollup-plugins.patak.dev/](https://link.juejin.cn/?target=https%3A%2F%2Fvite-rollup-plugins.patak.dev%2F) 
+反过来说，Rollup 插件却不一定能完全兼容 Vite(这部分我们会在**插件开发**小节展开来说)。不过，目前仍然有不少 Rollup 插件可以直接复用到 Vite 中，可以通过这个站点查看所有兼容 Vite 的 Rollup 插件: [vite-rollup-plugins.patak.dev/](https://link.juejin.cn/?target=https%3A%2F%2Fvite-rollup-plugins.patak.dev%2F) 
 
 
 
@@ -2253,6 +2263,8 @@ runBuild()
 ##### Transform API --- 文件转译
 
 除了项目的打包功能之后，Esbuild 还专门提供了单文件编译的能力，即`Transform API`，与 `Build API` 类似，它也包含了同步和异步的两个方法，分别是`transformSync`和`transform`。
+
+Vite 的底层实现也是采用 `transform` 这个 API 进行 TS 及 JSX 的单文件转译的
 
 
 
@@ -2420,6 +2432,7 @@ const myPlugin = {
     build.onStart(() => {
       console.log('build started')
     });
+
     build.onEnd((buildResult) => {
       if (buildResult.errors.length) {
         return;
@@ -2442,6 +2455,37 @@ const myPlugin = {
 #### esbuild 自定义 HTML 构建插件
 
 Esbuild 作为一个前端打包工具，本身并不具备 HTML 的构建能力。也就是说，当它把 js/css 产物打包出来的时候，并不意味着前端的项目可以直接运行了，还需要一份对应的入口 HTML 文件。这份 HTML 文件当然可以手写一个，但手写显得比较麻烦，尤其是产物名称带哈希值的时候，每次打包完都要替换路径。此时就可以通过 esbuild 插件完成
+
+
+
+在 Esbuild 插件的 `onEnd` 钩子中可以拿到 `metafile` 对象的信息，如下：
+
+```js
+{
+  "inputs": { /* 省略内容 */ },
+  "output": {
+    "dist/index.js": {
+      imports: [],
+      exports: [],
+      entryPoint: 'src/index.jsx',
+      inputs: {
+        'http-url:https://cdn.skypack.dev/-/object-assign@v4.1.1-LbCnB3r2y2yFmhmiCfPn/dist=es2019,mode=imports/optimized/object-assign.js': { bytesInOutput: 1792 },
+        'http-url:https://cdn.skypack.dev/-/react@v17.0.1-yH0aYV1FOvoIPeKBbHxg/dist=es2019,mode=imports/optimized/react.js': { bytesInOutput: 10396 },
+        'http-url:https://cdn.skypack.dev/-/scheduler@v0.20.2-PAU9F1YosUNPKr7V4s0j/dist=es2019,mode=imports/optimized/scheduler.js': { bytesInOutput: 9084 },
+        'http-url:https://cdn.skypack.dev/-/react-dom@v17.0.1-oZ1BXZ5opQ1DbTh7nu9r/dist=es2019,mode=imports/optimized/react-dom.js': { bytesInOutput: 183229 },
+        'http-url:https://cdn.skypack.dev/react-dom': { bytesInOutput: 0 },
+        'src/index.jsx': { bytesInOutput: 178 }
+      },
+      bytes: 205284
+    },
+    "dist/index.js.map": { /* 省略内容 */ }
+  }
+}
+```
+
+
+
+基于这个对象信息，开发插件：html-plugin
 
 
 
@@ -2546,11 +2590,222 @@ runBuild()
 
 ### vite 的构建基石 Rollup
 
-简化下 rollup 的构建步骤，主要是：输入  ---> 构建 ---> 输出
+
+
+#### Rollup 常用配置
+
+
+
+##### 多产物配置
+
+在打包 JavaScript 类库的场景中，我们通常需要对外暴露出不同格式的产物供他人使用，不仅包括 `ESM`，也需要包括诸如`CommonJS`、`UMD`等格式，保证良好的兼容性。
+
+同一份入口文件，让 Rollup 打包出不一样格式的产物，配置：
+
+```js
+const buildOptions = {
+  input: ["src/index.js"],
+  // 将 output 改造成一个数组
+  output: [
+    {
+      dir: "dist/es",
+      format: "esm",
+    },
+    {
+      dir: "dist/cjs",
+      format: "cjs",
+    },
+  ],
+};
+
+export default buildOptions;
+```
+
+
+
+##### 多入口配置
+
+```js
+{
+  input: ["src/index.js", "src/util.js"]
+}
+
+
+// 或者
+{
+  input: {
+    index: "src/index.js",
+    util: "src/util.js",
+  },
+}
+```
+
+
+
+build 后结果
+
+![](./imgs/img65.png)
+
+
+
+##### 自定义 output 配置
+
+```js
+output: {
+  // 产物输出目录
+  dir: path.resolve(__dirname, 'dist'),
+
+  // 以下三个配置项都可以使用这些占位符:
+  // 1. [name]: 去除文件后缀后的文件名
+  // 2. [hash]: 根据文件名和文件内容生成的 hash 值
+  // 3. [format]: 产物模块格式，如 es、cjs
+  // 4. [extname]: 产物后缀名(带`.`)
+  // 入口模块的输出文件名
+  entryFileNames: `[name].js`,
+
+  // 非入口模块(如动态 import)的输出文件名
+  chunkFileNames: 'chunk-[hash].js',
+
+  // 静态资源文件输出文件名
+  assetFileNames: 'assets/[name]-[hash][extname]',
+
+  // 产物输出格式，包括`amd`、`cjs`、`es`、`iife`、`umd`、`system`
+  format: 'cjs',
+
+  // 是否生成 sourcemap 文件
+  sourcemap: true,
+
+  // 如果是打包出 iife/umd 格式，需要对外暴露出一个全局变量，通过 name 配置变量名
+  name: 'MyBundle',
+
+  // 全局变量声明
+  globals: {
+    // 项目中可以直接用`$`代替`jquery`
+    jquery: '$'
+  }
+}
+```
+
+
+
+##### external 能力
+
+对于某些第三方包，有时候不想让 Rollup 进行打包，也可以通过 external 进行外部化
+
+```js
+{
+  external: ['react', 'react-dom']
+}
+```
+
+
+
+##### 插件能力
+
+在 Rollup 的日常使用中，难免会遇到一些 Rollup 本身不支持的场景，比如`兼容 CommonJS 打包`、`注入环境变量`、`配置路径别名`、`压缩产物代码` 等等。这个时候就需要引入相应的 Rollup 插件
+
+
+
+虽然 Rollup 能够打包`输出`出 `CommonJS` 格式的产物，但对于`输入`给 Rollup 的代码并不支持 CommonJS，仅仅支持 ESM。目前为止，还是有不少第三方依赖只有 CommonJS 格式产物而并未提供 ESM 产物。因此，需要引入额外的插件去解决这个问题。
+
+
+
+首先需要安装两个核心的插件包:
+
+```shell
+pnpm i @rollup/plugin-node-resolve @rollup/plugin-commonjs 
+```
+
+- `@rollup/plugin-node-resolve`是为了允许我们加载第三方依赖，否则像`import React from 'react'` 的依赖导入语句将不会被 Rollup 识别。
+- `@rollup/plugin-commonjs` 的作用是将 CommonJS 格式的代码转换为 ESM 格式
+
+
+
+配置插件
+
+```js
+// rollup.config.js
+import resolve from "@rollup/plugin-node-resolve";
+import commonjs from "@rollup/plugin-commonjs";
+
+/**
+ * @type { import('rollup').RollupOptions }
+ */
+export default {
+  input: ["src/index.js"],
+  output: [
+    {
+      dir: "dist/es",
+      format: "esm",
+    },
+    {
+      dir: "dist/cjs",
+      format: "cjs",
+    },
+  ],
+  // 通过 plugins 参数添加插件
+  plugins: [resolve(), commonjs()],
+};
+```
+
+
+
+其它一些比较常用的 Rollup 插件库:
+
+- [@rollup/plugin-json](https://link.juejin.cn/?target=https%3A%2F%2Fgithub.com%2Frollup%2Fplugins%2Ftree%2Fmaster%2Fpackages%2Fjson)： 支持`.json`的加载，并配合`rollup`的`Tree Shaking`机制去掉未使用的部分，进行按需打包。
+- [@rollup/plugin-babel](https://link.juejin.cn/?target=https%3A%2F%2Fgithub.com%2Frollup%2Fplugins%2Ftree%2Fmaster%2Fpackages%2Fbabel)：在 Rollup 中使用 Babel 进行 JS 代码的语法转译。
+- [@rollup/plugin-typescript](https://link.juejin.cn/?target=https%3A%2F%2Fgithub.com%2Frollup%2Fplugins%2Ftree%2Fmaster%2Fpackages%2Ftypescript): 支持使用 TypeScript 开发。
+- [@rollup/plugin-alias](https://link.juejin.cn/?target=https%3A%2F%2Fgithub.com%2Frollup%2Fplugins%2Ftree%2Fmaster%2Fpackages%2Falias)：支持别名配置。
+- [@rollup/plugin-replace](https://link.juejin.cn/?target=https%3A%2F%2Fgithub.com%2Frollup%2Fplugins%2Ftree%2Fmaster%2Fpackages%2Freplace)：在 Rollup 进行变量字符串的替换。
+- [rollup-plugin-visualizer](https://link.juejin.cn/?target=https%3A%2F%2Fgithub.com%2Fbtd%2Frollup-plugin-visualizer): 对 Rollup 打包产物进行分析，自动生成产物体积可视化分析图。
+
+
+
+#### Rollup 构建步骤
+
+在执行 `rollup` 命令之后，在 cli 内部的主要逻辑简化如下:
+
+```js
+// Build 阶段
+const bundle = await rollup.rollup(inputOptions);
+
+// Output 阶段
+await Promise.all(outputOptions.map(bundle.write));
+
+// 构建结束
+await bundle.close();
+```
+
+
+
+Rollup 内部主要经历了 `Build` 和 `Output` 两大阶段：
 
 ![](./imgs/img41.png)
 
-下面看看 Build 和 Output 两个阶段的插件工作流
+- 首先，Build 阶段主要负责创建模块依赖图，初始化各个模块的 AST 以及模块之间的依赖关系。
+- 经过 Build 阶段的 `bundle` 对象其实并没有进行模块的打包，这个对象的作用在于存储各个模块的内容及依赖关系，同时暴露`generate`和`write`方法，以进入到后续的 `Output` 阶段（`write`和`generate`方法唯一的区别在于前者打包完产物会写入磁盘，而后者不会）
+- 所以，真正进行打包的过程会在 `Output` 阶段进行，即在`bundle`对象的 `generate`或者`write`方法中进行
+
+
+
+**对于一次完整的构建过程而言，** **Rollup** **会先进入到 Build 阶段，解析各模块的内容及依赖关系，然后进入**`Output`**阶段，完成打包及输出的过程**。
+
+对于不同的阶段，Rollup 插件会有不同的插件工作流程，接下来就来拆解一下 Rollup 插件在 `Build` 和 `Output` 两个阶段的详细工作流程。
+
+
+
+#### 插件 Hook
+
+拆解 `Build` 和 `Output` 两个阶段的详细工作流程之前，先了解下 Hook。
+
+
+
+插件的各种 Hook 可以根据这两个构建阶段分为两类: `Build Hook` 与 `Output Hook`：
+
+- `Build Hook`即在`Build`阶段执行的钩子函数，在这个阶段主要进行模块代码的转换、AST 解析以及模块依赖的解析，那么这个阶段的 Hook 对于代码的操作粒度一般为`模块`级别，也就是单文件级别。
+- `Ouput Hook`(官方称为`Output Generation Hook`)，则主要进行代码的打包，对于代码而言，操作粒度一般为 `chunk`级别(一个 chunk 通常指很多文件打包到一起的产物)。
+
+
 
 #### Build 阶段插件工作流
 
@@ -2595,6 +2850,54 @@ runBuild()
 10. 当上述的`bundle`的`close`方法被调用时，会触发`closeBundle`钩子，到这里 Output 阶段正式结束。
 
 > 当打包过程中任何阶段出现错误，会触发 renderError 钩子，然后执行closeBundle钩子结束打包。
+
+
+
+#### 总结 build 和 output 阶段
+
+**build 阶段做的事：**
+
+| **步骤**            | **详细说明**                                                 |
+| ------------------- | ------------------------------------------------------------ |
+| **1. 解析入口文件** | 读取配置中的 `input`，定位入口文件（如 `src/main.js`）       |
+| **2. 递归分析依赖** | 通过 `resolveId` 钩子解析模块路径，生成绝对路径              |
+| **3. 加载模块内容** | 使用 `load` 钩子读取文件内容（支持插件处理 `.vue`、`.svg` 等非 JS 文件） |
+| **4. AST 转换**     | 将代码转换为 AST（抽象语法树），应用插件（如 Babel、TypeScript）转换语法 |
+| **5. 依赖图生成**   | 构建 `ModuleGraph` 对象，记录模块间的引用关系，标记未使用的导出（Tree Shaking） |
+
+关键插件钩子：
+
+- `resolveId`：解析模块路径。
+- `load`：加载模块内容。
+- `transform`：转换代码（如 Babel 编译）。
+
+输出结果：
+
+- **模块依赖图**：包含所有模块及其关系的内部数据结构。
+- **AST 节点**：优化和代码生成的中间表示。
+
+
+
+**output 阶段做的事：**
+
+| **1. Chunk 生成**     | 根据配置（如 `output.format`、`manualChunks`）拆分代码为单个或多个 Chunk |
+| --------------------- | ------------------------------------------------------------ |
+| **2. 代码转换**       | 将模块代码转换为目标格式（ESM、CJS、UMD 等）                 |
+| **3. Tree Shaking**   | 删除未被使用的导出（基于 ESM 静态分析）                      |
+| **4. Scope Hoisting** | 合并模块作用域，减少闭包（提升运行效率）                     |
+| **5. 生成 SourceMap** | 合并各模块的 SourceMap，生成最终映射文件（需配置 `sourcemap: true`） |
+| **6. 写入文件**       | 根据 `output.file` 或 `output.dir` 输出 Bundle 到磁盘        |
+
+关键插件钩子
+
+- `renderChunk`：修改单个 Chunk 的代码（如压缩、添加注释）。
+- `generateBundle`：所有 Chunk 生成后，写入前干预。
+- `writeBundle`：文件写入完成后触发。
+
+输出结果
+
+- **Bundle 文件**：如 `dist/bundle.js`（单文件）或 `dist/chunk-*.js`（代码分割）。
+- **SourceMap**：如 `dist/bundle.js.map`。
 
 
 
@@ -4281,7 +4584,7 @@ export default {
 }
 ```
 
-默认情况下 Vite 会使用 Esbuild 对 CSS 代码进行压缩，一般不需要我们对 `cssTarget` 进行配置。
+默认情况下 Vite 会使用 Esbuild 对 CSS 代码进行压缩，一般不需要对 `cssTarget` 进行配置。
 
 > 不过在需要兼容安卓端微信的 webview 时，我们需要将 `build.cssTarget` 设置为 `chrome61`，以防止 vite 将 `rgba()` 颜色转化为 `#RGBA` 十六进制符号的形式，出现样式问题。
 
