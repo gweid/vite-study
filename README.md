@@ -4299,7 +4299,7 @@ export default {
 
 
 
-## Vite 源码
+## Vite 核心原理
 
 
 
