@@ -3581,7 +3581,7 @@ export default {
 安装：
 
 ```shell
-npm install @babel/cli @babel/core @babel/preset-env corejs regenerator-runtime -D
+pnpm i @babel/cli @babel/core @babel/preset-env corejs regenerator-runtime -D
 ```
 
 
@@ -3658,8 +3658,8 @@ Babel 已经根据`目标浏览器`的配置为我们添加了大量的 Polyfill
 此时可以使用 transform-runtime。安装：
 
 ```shell
-npm install @babel/plugin-transform-runtime -D
-npm install @babel/runtime-corejs3 -S
+pnpm i @babel/plugin-transform-runtime -D
+pnpm i @babel/runtime-corejs3 -S
 ```
 
 
@@ -3708,7 +3708,7 @@ Vite 官方已经封装好了一个开箱即用的方案: `@vitejs/plugin-legacy
 安装
 
 ```shell
-npm install @vitejs/plugin-legacy -D
+pnpm i @vitejs/plugin-legacy -D
 ```
 
 
@@ -3792,6 +3792,324 @@ export default defineConfig({
     }
   }
   ```
+
+
+
+### 模块联邦
+
+
+
+#### 模块联邦的概念
+
+模块联邦中主要有两种模块: `本地模块`和`远程模块`。
+
+本地模块即为普通模块，是当前构建流程中的一部分，而远程模块不属于当前构建流程，在本地模块的运行时进行导入，同时本地模块和远程模块可以共享某些依赖的代码，如下图所示：
+
+![](./imgs/img62.png)
+
+有意思的是：在模块联邦中，每个模块既可以是`本地模块`，导入其它的`远程模块`，又可以作为远程模块，被其他的模块导入
+
+
+
+#### 模块联邦的优势
+
+- **实现任意粒度的模块共享**：这里所指的模块粒度可大可小，包括第三方 npm 依赖、业务组件、工具函数，甚至可以是整个前端应用！而整个前端应用能够共享产物，代表着各个应用单独开发、测试、部署，这也是一种`微前端`的实现。
+
+- **优化构建产物体积**：远程模块可以从本地模块运行时被拉取，而不用参与本地模块的构建，可以加速构建过程，同时也能减小构建产物。
+
+- **运行时按需加载**：远程模块导入的粒度可以很小，如果只想使用 app1 模块的`add`函数，只需要在 app1 的构建配置中导出这个函数，然后在本地模块中按照诸如`import('app1/add')`的方式导入即可，这样就很好地实现了模块按需加载。
+
+- **第三方依赖共享**：通过模块联邦中的共享依赖机制，可以很方便地实现在模块间公用依赖代码，从而避免以往的`external + CDN 引入`方案的各种问题。
+
+
+
+#### vite 启用模块联邦
+
+社区中已经提供了一个比较成熟的 Vite 模块联邦方案: `vite-plugin-federation`，这个方案基于 Vite(或者 Rollup) 实现了完整的模块联邦能力
+
+
+
+安装：
+
+```shell
+pnpm i @originjs/vite-plugin-federation -D
+```
+
+
+
+分别创建两个项目：host（本地模块）和 remote（远程模块），配置 vite.config.js
+
+> host ---> vite.config.js
+
+```js
+import { defineConfig } from 'vite'
+import vue from '@vitejs/plugin-vue'
+import federation from '@originjs/vite-plugin-federation'
+
+export default defineConfig({
+  plugins: [
+    vue(),
+    federation({
+      // 远程模块声明
+      remotes: {
+        remote_app: 'http://localhost:3001/assets/remoteEntry.js'
+      },
+      // 共享依赖声明
+      shared: ['vue'],
+    }),
+  ],
+  build: {
+    target: 'esnext',
+  }
+})
+```
+
+
+
+> remote ---> vite.config.js
+
+```js
+import { defineConfig } from 'vite'
+import vue from '@vitejs/plugin-vue'
+import federation from '@originjs/vite-plugin-federation'
+
+// https://vite.dev/config/
+export default defineConfig({
+  plugins: [
+    vue(),
+    // 共享依赖声明
+    federation({
+      name: 'remote_app',
+      filename: 'remoteEntry.js',
+      // 导出模块声明
+      exposes: {
+        './Button': './src/components/Button.js',
+        './App': './src/App.vue',
+        './utils': './src/utils.ts',
+      },
+      // 共享依赖声明
+      shared: ['vue'],
+    }),
+  ],
+  build: {
+    target: 'esnext',
+  }
+})
+```
+
+
+
+这样，基本就完成了远程模块的导出及远程模块在本地模块的注册
+
+
+
+对远程模块 remote 做构建
+
+```shell
+// 打包产物
+pnpm run build
+
+
+// 模拟部署效果，一般会在生产环境将产物上传到 CDN 
+npx vite preview --port=3001 --strictPort
+```
+
+
+
+然后，在本地模块中使用
+
+```vue
+<script setup lang="ts">
+import HelloWorld from "./components/HelloWorld.vue";
+import { defineAsyncComponent } from "vue";
+// 导入远程模块
+// 1. 组件
+import RemoteApp from "remote_app/App";
+// 2. 工具函数
+import { add } from "remote_app/utils";
+// 3. 异步组件
+const AysncRemoteButton = defineAsyncComponent(
+  () => import("remote_app/Button")
+);
+const data: number = add(1, 2);
+</script>
+
+<template>
+  <div>
+    <img alt="Vue logo" src="./assets/logo.png" />
+    <HelloWorld />
+    <RemoteApp />
+    <AysncRemoteButton />
+    <p>应用 2 工具函数计算结果: 1 + 2 = {{ data }}</p>
+  </div>
+</template>
+
+<style>
+#app {
+  font-family: Avenir, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-align: center;
+  color: #2c3e50;
+  margin-top: 60px;
+}
+</style>
+```
+
+
+
+#### vite 模块联邦原理
+
+vite-plugin-federation 这个插件背后的原理。实现模块联邦有三大主要的要素：
+
+- `Host`模块: 即本地模块，用来消费远程模块。
+
+- `Remote`模块: 即远程模块，用来生产一些模块，并暴露`运行时容器`供本地模块消费。
+
+- `Shared`依赖: 即共享依赖，用来在本地模块和远程模块中实现第三方依赖的共享。
+
+
+
+在使用远程模块中：
+
+```js
+import RemoteApp from "remote_app/App";
+```
+
+这段代码被编译成：
+
+```js
+// 远程模块表
+const remotesMap = {
+  'remote_app':{url:'http://localhost:3001/assets/remoteEntry.js',format:'esm',from:'vite'},
+  'shared':{url:'vue',format:'esm',from:'vite'}
+};
+
+async function ensure() {
+  const remote = remoteMap[remoteId];
+  // 做一些初始化逻辑，暂时忽略
+  // 返回的是运行时容器
+}
+
+async function getRemote(remoteName, componentName) {
+  return ensure(remoteName)
+    // 从运行时容器里面获取远程模块
+    .then(remote => remote.get(componentName))
+    .then(factory => factory());
+}
+
+// import 语句被编译成了这样
+// tip: es2020 产物语法已经支持顶层 await
+const __remote_appApp = await getRemote("remote_app" , "./App");
+```
+
+除了 import 语句被编译之外，在代码中还添加了`remoteMap`和一些工具函数，它们的目的很简单，就是通过访问远端的**运行时容器**来拉取对应名称的模块
+
+
+
+运行时容器其实就是指远程模块打包产物`remoteEntry.js`的导出对象，看看它的逻辑：
+
+```js
+// remoteEntry.js
+const moduleMap = {
+  "./Button": () => {
+    return import('./__federation_expose_Button.js').then(module => () => module)
+  },
+  "./App": () => {
+    dynamicLoadingCss('./__federation_expose_App.css');
+    return import('./__federation_expose_App.js').then(module => () => module);
+  },
+  './utils': () => {
+    return import('./__federation_expose_Utils.js').then(module => () => module);
+  }
+};
+
+// 加载 css
+const dynamicLoadingCss = (cssFilePath) => {
+  const metaUrl = import.meta.url;
+  if (typeof metaUrl == 'undefined') {
+    console.warn('The remote style takes effect only when the build.target option in the vite.config.ts file is higher than that of "es2020".');
+    return
+  }
+  const curUrl = metaUrl.substring(0, metaUrl.lastIndexOf('remoteEntry.js'));
+  const element = document.head.appendChild(document.createElement('link'));
+  element.href = curUrl + cssFilePath;
+  element.rel = 'stylesheet';
+};
+
+// 关键方法，暴露模块
+const get =(module) => {
+  return moduleMap[module]();
+};
+
+const init = () => {
+  // 初始化逻辑，用于共享模块，暂时省略
+}
+
+export { dynamicLoadingCss, get, init }
+```
+
+- `moduleMap`用来记录导出模块的信息，所有在`exposes`参数中声明的模块都会打包成单独的文件，然后通过 `dynamic import` 进行导入。
+
+- 容器导出了十分关键的`get`方法，让本地模块能够通过调用这个方法来访问到该远程模块。
+
+
+
+继续分析共享依赖的实现。本地模块设置了`shared: ['vue']`参数之后，当它执行远程模块代码的时候，一旦遇到了引入`vue`的情况，会优先使用本地的 `vue`，而不是远端模块中的`vue`
+
+
+
+本地模块编译后的`ensure`函数逻辑
+
+```js
+// host
+
+// 下面是共享依赖表。每个共享依赖都会单独打包
+const shareScope = {
+  'vue':{'3.2.31':{get:()=>get('./__federation_shared_vue.js'), loaded:1}}
+};
+async function ensure(remoteId) {
+  const remote = remotesMap[remoteId];
+  if (remote.inited) {
+    return new Promise(resolve => {
+        if (!remote.inited) {
+          remote.lib = window[remoteId];
+          remote.lib.init(shareScope);
+          remote.inited = true;
+        }
+        resolve(remote.lib);
+    });
+  }
+}
+```
+
+`ensure`函数的主要逻辑是将共享依赖信息传递给远程模块的运行时容器，并进行容器的初始化
+
+
+
+接下来进入容器初始化的逻辑`init`中：
+
+```js
+const init =(shareScope) => {
+  globalThis.__federation_shared__= globalThis.__federation_shared__|| {};
+
+  // 下面的逻辑作用很简单，就是将本地模块的`共享模块表`绑定到远程模块的全局 window 对象上
+  Object.entries(shareScope).forEach(([key, value]) => {
+    const versionKey = Object.keys(value)[0];
+    const versionValue = Object.values(value)[0];
+    const scope = versionValue.scope || 'default';
+    globalThis.__federation_shared__[scope] = globalThis.__federation_shared__[scope] || {};
+    const shared= globalThis.__federation_shared__[scope];
+    (shared[key] = shared[key]||{})[versionKey] = versionValue;
+  });
+};
+```
+
+这样，当本地模块的`共享依赖表`能够在远程模块访问时，远程模块内也就能够使用本地模块的依赖(如 `vue`)了
+
+共享依赖的基本流程如下：
+
+![](./imgs/img63.png)
 
 
 
