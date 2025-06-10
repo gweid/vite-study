@@ -2903,7 +2903,7 @@ Rollup 内部主要经历了 `Build` 和 `Output` 两大阶段：
 
 ### 开发 Vite 插件
 
- Vite 的插件机制是基于 Rollup 来设计的，Vite **开发阶段**会模拟 Rollup 的行为，调用一系列与 Rollup 兼容的钩子，主要分为三个阶段：
+ Vite 的插件机制是基于 Rollup 来设计的，Vite **开发阶段会模拟 Rollup 的行为**，调用一系列与 Rollup 兼容的钩子，主要分为三个阶段：
 
 - **服务器启动阶段**: `options`和`buildStart`钩子会在服务启动时被调用。
 - **请求响应阶段**: 当浏览器发起请求时，Vite 内部依次调用`resolveId`、`load`和`transform`钩子。
@@ -3451,6 +3451,37 @@ interface ImportMeta {
 ```
 
 `import.meta`对象为现代浏览器原生的一个内置对象，Vite 所做的事情就是在这个对象上的 `hot` 属性中定义了一套完整的属性和方法。因此，在 Vite 当中，你就可以通过`import.meta.hot`来访问关于 HMR 的这些属性和方法，比如`import.meta.hot.accept()`。
+
+
+
+#### Vite 中开启 HMR
+
+在 Vite 中，**HMR（Hot Module Replacement，热模块替换）是默认开启的**，无需额外配置即可在开发模式下使用。
+
+
+
+在 `vite.config.js` 中，可以通过 `server.hmr` 调整 HMR 行为：
+
+```js
+// vite.config.js
+export default {
+  server: {
+    hmr: {
+      // 禁用 HMR（不推荐）
+      // enabled: false,
+
+      // 自定义 HMR 客户端连接选项（适用于代理或远程开发）
+      host: 'localhost',
+      port: 3000,
+      protocol: 'ws', // 或 'wss'（HTTPS）
+      
+      // 解决网络问题导致的 HMR 断开
+      overlay: false, // 禁用错误覆盖层
+      clientPort: 443, // 当后端使用 HTTPS 时指定客户端端口
+    },
+  },
+};
+```
 
 
 
