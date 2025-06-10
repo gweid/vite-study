@@ -4113,6 +4113,192 @@ const init =(shareScope) => {
 
 
 
+### 性能优化
+
+对于项目的加载性能优化而言，常见的优化手段可以分为下面三类:
+
+1. **网络优化**：包括 `HTTP2`、`DNS 预解析`、`Preload`、`Prefetch`等手段
+2. **资源优化**：包括`构建产物分析`、`资源压缩`、`产物拆包`、`按需加载`等优化方式
+3. **预渲染优化**：`服务端渲染`(SSR)和`静态站点生成`(SSG) 等
+
+
+
+#### 网络优化
+
+
+
+##### HTTP2
+
+在 Vite 中，我们可以通过`vite-plugin-mkcert`在本地 Dev Server 上开启 HTTP2:
+
+```shell
+pnpm i vite-plugin-mkcert -D
+```
+
+
+
+使用：
+
+```js
+// vite.config.ts
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+import mkcert from "vite-plugin-mkcert";
+
+export default defineConfig({
+  plugins: [react(), mkcert()],
+  server: {
+    // https 选项需要开启
+    https: true,
+  },
+});
+```
+
+
+
+插件的原理也比较简单，由于 HTTP2 依赖 TLS 握手，插件会帮你自动生成 TLS 证书，然后支持通过 HTTPS 的方式启动，而 Vite 会自动把 HTTPS 服务升级为 HTTP2
+
+> 需要注意的是，当使用 Vite 的 proxy 配置时，Vite 会将 HTTP2 降级为 HTTPS，不过这个问题可以通过 [vite-plugin-proxy-middleware](https://link.juejin.cn/?target=https%3A%2F%2Fgithub.com%2Fwilliamyorkl%2Fvite-plugin-proxy-middleware) 插件解决。
+
+
+
+`vite-plugin-mkcert`插件仅用于开发阶段，在生产环境中我们会对线上的服务器进行配置，从而开启 HTTP2 的能力，如 [Nginx 的 HTTP2 配置](https://link.juejin.cn/?target=http%3A%2F%2Fnginx.org%2Fen%2Fdocs%2Fhttp%2Fngx_http_v2_module.html)
+
+
+
+##### preload/prefresh
+
+
+
+#### 资源优化
+
+
+
+##### 产物分析
+
+可以使用 `rollup-plugin-visualizer`来进行产物分析
+
+
+
+安装：
+
+```shell
+pnpm i rollup-plugin-visualizer -D
+```
+
+
+
+使用：
+
+```js
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+import { visualizer } from "rollup-plugin-visualizer";
+
+// https://vitejs.dev/config/
+export default defineConfig({
+  plugins: [
+    react(),
+    visualizer({
+      // 打包完成后自动打开浏览器，显示产物体积报告
+      open: true,
+    }),
+  ],
+});
+```
+
+
+
+执行`pnpm run build`之后，浏览器会自动打开产物分析页面：
+
+![](./imgs/img64.png)
+
+
+
+##### js 压缩
+
+配置如下：
+
+```js
+// vite.config.ts
+export default {
+  build: {
+    // 类型: boolean | 'esbuild' | 'terser'
+    // 默认为 `esbuild`
+    minify: 'esbuild',
+    // 产物目标环境
+    target: 'modules',
+    // 如果 minify 为 terser，可以通过下面的参数配置具体行为
+    // https://terser.org/docs/api-reference#minify-options
+    terserOptions: {}
+  }
+}
+
+```
+
+- vite 的 target 默认是 modules，对应 browserlist 
+
+  ```js
+  ['es2019', 'edge88', 'firefox78', 'chrome87', 'safari13.1']
+  ```
+
+  > 疑问：压缩代码，为什么还跟目标环境有关系呢？
+  >
+  > 
+  >
+  > 对于 JS 代码压缩的理解仅仅停留在去除空行、混淆变量名的层面是不够的，为了达到极致的压缩效果，压缩器一般会根据浏览器的目标，会对代码进行语法层面的转换
+  >
+  > 
+  >
+  > 比如
+  >
+  > ```js
+  > // 业务代码中
+  > info == null ? undefined : info.name
+  > ```
+  >
+  > 如果将 `target` 配置为`exnext`，也就是最新的 JS 语法，会发现压缩后的代码变成了下面这样:
+  >
+  > ```js
+  > info?.name
+  > ```
+  >
+  > 这就是压缩工具在背后所做的事情，将某些语句识别之后转换成更高级的语法，从而达到更优的代码体积
+
+
+
+##### css 压缩
+
+配置如下：
+
+```js
+// vite.config.ts
+export default {
+  build: {
+    // 设置 CSS 的目标环境
+    cssTarget: ''
+  }
+}
+```
+
+默认情况下 Vite 会使用 Esbuild 对 CSS 代码进行压缩，一般不需要我们对 `cssTarget` 进行配置。
+
+> 不过在需要兼容安卓端微信的 webview 时，我们需要将 `build.cssTarget` 设置为 `chrome61`，以防止 vite 将 `rgba()` 颜色转化为 `#RGBA` 十六进制符号的形式，出现样式问题。
+
+
+
+##### 图片压缩
+
+图片压缩使用插件 `vite-plugin-imagemin`，具体可查看 [图片压缩](#图片压缩)
+
+
+
+##### 代码分割
+
+具体查看 [代码分割 Code Splitting](#代码分割 Code Splitting)
+
+
+
 ## Vite 源码
 
 
