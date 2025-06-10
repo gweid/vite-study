@@ -3429,27 +3429,373 @@ if (import.meta.hot) {
 
 
 
+### 代码分割 Code Splitting
+
+在生产环境下，为了提高页面加载性能，构建工具一般将项目的代码打包(bundle)到一起，这样上线之后只需要请求少量的 JS 文件，大大减少 HTTP 请求。当然，Vite 也不例外，默认情况下 Vite 利用底层打包引擎 Rollup 来完成项目的模块打包。
+
+某种意义上来说，对线上环境进行项目打包是一个必须的操作。但随着前端工程的日渐复杂，单份的打包产物体积越来越庞大，会出现一系列应用加载性能问题，而代码分割可以很好地解决它们。
 
 
 
+涉及的一些概念名词：
+
+- `bundle` 指的是整体的打包产物，包含 JS 和各种静态资源。
+- `chunk`指的是打包后的 JS 文件，是 `bundle` 的子集。
+- `vendor`是指第三方包的打包产物，是一种特殊的 chunk。
 
 
 
+#### Code Splitting 解决的问题
+
+在传统的单 chunk 打包模式下，当项目代码越来越庞大，最后会导致浏览器下载一个巨大的文件，从页面加载性能的角度来说，主要会导致两个问题:
+
+- 无法做到**按需加载**，即使是当前页面不需要的代码也会进行加载。
+- 线上**缓存复用率**极低，改动一行代码即可导致整个 bundle 产物缓存失效。
 
 
 
+进行`Code Splitting`之后，可以合理将代码分块，代码的改动只会影响部分的 chunk 哈希改动，这样就可以让浏览器复用本地的强缓存，大大提升线上应用的加载性能
 
 
 
+#### vite 默认拆包策略
+
+Vite 中已经内置了一份拆包的策略，基于 Rollup 的`manualChunks`API 实现了`应用拆包`：
+
+- 对于 `Initital Chunk` 而言，业务代码和第三方包代码分别打包为单独的 chunk，在上述的例子中分别对应`index.js`和`vendor.js`。需要说明的是，这是 Vite 2.9 版本之前的做法，而在 Vite 2.9 及以后的版本，默认打包策略更加简单粗暴，将所有的 js 代码全部打包到 `index.js` 中
+- 对于 `Async Chunk` 而言 ，动态 import 的代码会被拆分成单独的 chunk，如上述的`Dynacmic`组件
 
 
 
+总结：Vite 默认拆包实现了 CSS 代码分割以及业务代码、第三方库代码、动态 import 模块代码三者的分离
 
 
 
+#### 自定义拆包
+
+针对更细粒度的拆包，Vite 的底层打包引擎 Rollup 提供了`manualChunks`，能自定义拆包策略
 
 
 
+`manualChunks` 主要有两种配置的形式，可以配置为一个对象或者一个函数。对象的配置，也是最简单的配置方式：
+
+```js
+// vite.config.ts
+{
+  build: {
+    rollupOptions: {
+      output: {
+        // manualChunks 配置
+        manualChunks: {
+          // 将 React 相关库打包成单独的 chunk 中
+          'react-vendor': ['react', 'react-dom'],
+          // 将 Lodash 库的代码单独打包
+          'lodash': ['lodash-es'],
+          // 将组件库的代码打包
+          'library': ['antd', '@arco-design/web-react'],
+        },
+      },
+    }
+  },
+}
+```
+
+
+
+函数形式的使用：
+
+```js
+// vite.config.ts
+{
+  build: {
+    rollupOptions: {
+      output: {
+        // manualChunks 配置
+        manualChunks(id) {
+          if (id.includes('antd') || id.includes('@arco-design/web-react')) {
+            return 'library';
+          }
+          if (id.includes('lodash')) {
+            return 'lodash';
+          }
+          if (id.includes('react')) {
+            return 'react';
+          }
+        }
+      },
+    }
+  },
+}
+```
+
+Rollup 会对每一个模块调用 manualChunks 函数，在 manualChunks 的函数入参中你可以拿到`模块 id` 及`模块详情信息`，经过一定的处理后返回 `chunk 文件的名称`，这样当前 id 代表的模块便会打包到你所指定的 chunk 文件中
+
+
+
+但是自定义拆包，在低版本 vite 中会有循环依赖问题（vite 4 以上版本已经解决）
+
+解决循环依赖，可以使用 `vite-plugin-chunk-split` 这个插件
+
+```js
+// vite.config.ts
+import { chunkSplitPlugin } from 'vite-plugin-chunk-split';
+
+export default {
+  plugins: [
+     chunkSplitPlugin({
+      // 指定拆包策略
+      customSplitting: {
+        // 1. 支持填包名。`react` 和 `react-dom` 会被打包到一个名为`render-vendor`的 chunk 里面(包括它们的依赖，如 object-assign)
+        'react-vendor': ['react', 'react-dom'],
+        // 2. 支持填正则表达式。src 中 components 和 utils 下的所有文件被会被打包为`component-util`的 chunk 中
+        'components-util': [/src\/components/, /src\/utils/]
+      }
+    }) 
+  ]
+}
+```
+
+
+
+### 语法降级与 Polyfill
+
+在低版本浏览器中，ES6 或者更高级的语法，没法使用，此时就需要转换成 ES5。
+
+
+
+旧版浏览器的语法兼容问题主要分两类: 
+
+- **语法降级问题**：某些浏览器不支持箭头函数，我们就需要将其转换为`function(){}`语法
+- **Polyfill 缺失问题**。`Polyfill`本身可以翻译为`垫片`，也就是为浏览器提前注入一些 API 的实现代码，如`Object.entries`方法的实现，这样可以保证产物可以正常使用这些 API，防止报错
+
+
+
+这两类问题本质上是通过前端的编译工具链(如`Babel`)及 JS 的基础 Polyfill 库(如`corejs`)来解决的，不会跟具体的构建工具所绑定。也就是说，对于这些本质的解决方案，在其它的构建工具(如 Webpack)能使用，在 Vite 当中也完全可以使用
+
+
+
+#### 底层工具链
+
+结合 `@babel/cli`、`@babel/core`、`@babel/preset-env`、`browserslistrc`、`corejs`、 `regenerator-runtime` 
+
+安装：
+
+```shell
+npm install @babel/cli @babel/core @babel/preset-env corejs regenerator-runtime -D
+```
+
+
+
+使用
+
+> .browserslistrc
+
+```text
+# 现代浏览器
+last 2 versions and since 2018 and > 0.5%
+# 兼容低版本 PC 浏览器
+IE >= 11, > 0.5%, not dead
+# 兼容低版本移动端浏览器
+iOS >= 9, Android >= 4.4, last 2 versions, > 0.2%, not dead
+```
+
+
+
+> babel.config.js
+
+```js
+{
+  "presets": [
+    [
+      "@babel/preset-env", 
+      {
+        // 基础库 core-js 的版本，一般指定为最新的大版本
+        "corejs": 3,
+        // Polyfill 注入策略，后文详细介绍
+        "useBuiltIns": "usage",
+      }
+    ]
+  ]
+}
+```
+
+
+
+`useBuiltIns`，它决定了添加 Polyfill 策略，默认是 `false`，即不添加任何的 Polyfill。你可以手动将`useBuiltIns`配置为`entry`或者`usage`，接下来我们看看这两个配置究竟有什么区别。
+
+
+
+当将 useBuiltIns 设置为 entry，要求必须在入口引入
+
+```js
+// index.js 开头加上
+import 'core-js';
+```
+
+此时打包出来的
+
+![](./imgs/img56.png)
+
+Babel 已经根据`目标浏览器`的配置为我们添加了大量的 Polyfill 代码，`index.js`文件简单的几行代码被编译成近 300 行。实际上，Babel 所做的事情就是将你的`import "core-js"`代码替换成了产物中的这些具体模块的导入代码。
+
+但这个配置有一个问题，即无法做到按需导入，上面的产物代码其实有大部分的 Polyfill 的代码我们并没有用到
+
+
+
+而使用 usage 可以做到按需导入
+
+![](./imgs/img57.png)
+
+
+
+但是使用 useBuiltIns: "usage" 也有缺点
+
+- 如果使用新特性，往往是通过基础库(如 core-js)往全局环境添加 Polyfill，如果是开发应用没有任何问题，如果是开发第三方工具库，则很可能会对**全局空间造成污染**。
+- 很多工具函数的实现代码(如上面示例中的`_defineProperty`方法)，会在许多文件中重现出现，造成**文件体积冗余**。
+
+
+
+此时可以使用 transform-runtime。安装：
+
+```shell
+npm install @babel/plugin-transform-runtime -D
+npm install @babel/runtime-corejs3 -S
+```
+
+
+
+使用：
+
+```js
+{
+  "plugins": [
+    // 添加 transform-runtime 插件
+    [
+      "@babel/plugin-transform-runtime", 
+      {
+        "corejs": 3
+      }
+    ]
+  ],
+  "presets": [
+    [
+      "@babel/preset-env", 
+      {
+        "corejs": 3,
+        // 关闭 @babel/preset-env 默认的 Polyfill 注入
+        "useBuiltIns": false,
+        "modules": false
+      }
+    ]
+  ]
+}
+```
+
+对比结果
+
+![](./imgs/img58.png)
+
+`transform-runtime` 一方面能够让我们在代码中使用`非全局版本`的 Polyfill，这样就避免全局空间的污染，这也得益于 `core-js` 的 pure 版本产物特性；另一方面对于`asyncToGeneator`这类的工具函数，它也将其转换成了一段引入语句，不再将完整的实现放到文件中，节省了编译后文件的体积。
+
+
+
+#### vite 的语法降级与 Polyfill
+
+Vite 官方已经封装好了一个开箱即用的方案: `@vitejs/plugin-legacy`，可以基于它来解决项目语法的浏览器兼容问题。这个插件内部同样使用 `@babel/preset-env` 以及 `core-js`等一系列基础库来进行语法降级和 Polyfill 注入
+
+
+
+安装
+
+```shell
+npm install @vitejs/plugin-legacy -D
+```
+
+
+
+使用：
+
+```js
+// vite.config.ts
+import legacy from '@vitejs/plugin-legacy';
+import { defineConfig } from 'vite'
+
+export default defineConfig({
+  plugins: [
+    // 省略其它插件
+    legacy({
+      // 设置目标浏览器，browserslist 配置语法
+      targets: ['ie >= 11'],
+    })
+  ]
+})
+```
+
+
+
+执行 npm build，可以看到 dist/assets 下多出了`index-legacy.js`、`vendor-legacy.js`以及`polyfills-legacy.js`三份产物文件
+
+![](./imgs/img59.png)
+
+
+
+而此时的 index.html 中：
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/assets/favicon.17e50649.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vite App</title>
+    <!-- 1. Modern 模式产物 -->
+    <script type="module" crossorigin src="/assets/index.c1383506.js"></script>
+    <link rel="modulepreload" href="/assets/vendor.0f99bfcc.js">
+    <link rel="stylesheet" href="/assets/index.91183920.css">
+  </head>
+  <body>
+    <div id="root"></div>
+    <!-- 2. Legacy 模式产物 -->
+    <script nomodule>兼容 iOS nomodule 特性的 polyfill，省略具体代码</script>
+    <script nomodule id="vite-legacy-polyfill" src="/assets/polyfills-legacy.36fe2f9e.js"></script>
+    <script nomodule id="vite-legacy-entry" data-src="/assets/index-legacy.c3d3f501.js">System.import(document.getElementById('vite-legacy-entry').getAttribute('data-src'))</script>
+  </body>
+</html>
+```
+
+通过官方的`legacy`插件， Vite 会分别打包出`Modern`模式和`Legacy`模式的产物，然后将两种产物插入同一个 HTML 里面，`Modern`产物被放到 `type="module"`的 script 标签中，而`Legacy`产物则被放到带有 [nomodule](https://link.juejin.cn/?target=https%3A%2F%2Fdeveloper.mozilla.org%2Fen-US%2Fdocs%2FWeb%2FHTML%2FElement%2Fscript%23attr-nomodule) 的 script 标签中。**这样产物便就能够同时放到现代浏览器和不支持`type="module"`的低版本浏览器当中执行**
+
+
+
+#### legacy 插件基本原理
+
+![](./imgs/img60.png)
+
+- 首先是在`configResolved`钩子中调整了`output`属性，这么做的目的是让 Vite 底层使用的打包引擎 Rollup 能另外打包出一份`Legacy 模式`的产物
+
+- 接着，在`renderChunk`阶段，插件会对 Legacy 模式产物进行语法转译和 Polyfill 收集，值得注意的是，这里并不会真正注入`Polyfill`，而仅仅只是收集`Polyfill`
+
+- 接下来会进入`generateChunk`钩子阶段，现在 Vite 会对之前收集到的`Polyfill`进行统一的打包。通过 `vite build` 对`renderChunk`中收集到 polyfill 代码进行打包，生成一个单独的 chunk
+
+  ![](./imgs/img61.png)
+
+  > 需要注意的是，polyfill chunk 中除了包含一些 core-js 和 regenerator-runtime 的相关代码，也包含了 `SystemJS` 的实现代码，可以将其理解为 ESM 的加载器，实现了在旧版浏览器下的模块加载能力
+
+- 经过上面，已经能够拿到 Legacy 模式的产物文件名及 Polyfill Chunk 的文件名，那么就可以通过`transformIndexHtml`钩子来将这些产物插入到 HTML 的结构中
+
+  ```js
+  {
+    transformIndexHtml(html) {
+      // 1. 插入 Polyfill chunk 对应的 <script nomodule> 标签
+      // 2. 插入 Legacy 产物入口文件对应的 <script nomodule> 标签
+    }
+  }
+  ```
+
+
+
+## Vite 源码
 
 
 

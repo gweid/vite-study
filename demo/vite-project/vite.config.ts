@@ -9,6 +9,7 @@ import viteRestart from 'vite-plugin-restart' // 监听文件修改，自动重�
 import viteEslint from 'vite-plugin-eslint'
 import viteStyleLint from 'vite-plugin-stylelint'
 import { createSvgIconsPlugin } from 'vite-plugin-svg-icons'
+import legacy from '@vitejs/plugin-legacy'
 
 // const isProd = process.env.NODE_ENV === 'production'
 
@@ -52,7 +53,10 @@ export default defineConfig({
       iconDirs: [path.join(__dirname, 'src/assets/svgs')]
     }),
     viteEslint(),
-    viteStyleLint()
+    viteStyleLint(),
+    legacy({
+      targets: '> 0.25%, not dead',
+    })
   ],
   // base: isProd ? CDN_URL : '/',
   server: {
@@ -80,6 +84,13 @@ export default defineConfig({
   },
   assetsInclude: ['.gltf'],
   build: {
-    assetsInlineLimit: 8 *1024
+    assetsInlineLimit: 8 *1024,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'react-vendor': ['react', 'react-dom']
+        }
+      }
+    }
   }
 })
