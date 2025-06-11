@@ -2913,7 +2913,18 @@ Rollup 内部主要经历了 `Build` 和 `Output` 两大阶段：
 
 
 
-#### 独有 Hook
+####通用钩子 Hook
+
+Vite 插件在开发服务器启动时会调用 Rollup的构建钩子。以下是一些常见钩子：
+
+- options：服务器启动时调用
+- buildStart： 构建开始时调用
+- resolveld、load、transform：每个传入模块请求时调用
+- buildEnd、closeBundle：服务器关闭时调用
+
+
+
+#### 独有钩子 Hook
 
 实际上 Vite 的插件机制也包含了自己独有的一部分，与 Rollup 的各个插件 Hook 并非完全兼容。
 
@@ -3108,6 +3119,178 @@ if (import.meta.hot) {
 
 
 
+#### 插件间通讯
+
+##### 通过插件上下文对象
+
+```js
+// 第一个插件
+function pluginA() {
+  return {
+    name: 'plugin-a',
+    configResolved(config) {
+      // 将数据挂载到全局上下文
+      config.pluginA = {
+        data: 'some data',
+        helper: () => 'helper function'
+      };
+    }
+  };
+}
+
+// 第二个插件
+function pluginB() {
+  return {
+    name: 'plugin-b',
+    configResolved(config) {
+      // 访问第一个插件提供的数据
+      console.log(config.pluginA.data); // 'some data'
+      console.log(config.pluginA.helper()); // 'helper function'
+    }
+  };
+}
+```
+
+
+
+##### 使用虚拟模块
+
+```js
+// 第一个插件
+function pluginA() {
+  let sharedData = { count: 0 };
+  
+  return {
+    name: 'plugin-a',
+    resolveId(id) {
+      if (id === 'virtual:plugin-communication') {
+        return id;
+      }
+    },
+    load(id) {
+      if (id === 'virtual:plugin-communication') {
+        return `export const data = ${JSON.stringify(sharedData)}`;
+      }
+    },
+    // 提供更新数据的方法
+    api: {
+      updateData(newData) {
+        sharedData = { ...sharedData, ...newData };
+      }
+    }
+  };
+}
+
+// 第二个插件
+function pluginB() {
+  return {
+    name: 'plugin-b',
+    configResolved(config) {
+      // 获取插件A的实例
+      const pluginAInstance = config.plugins.find(p => p.name === 'plugin-a');
+      
+      // 调用插件A的API
+      pluginAInstance.api.updateData({ count: 1 });
+    }
+  };
+}
+```
+
+
+
+##### 使用 Vite 的自定义钩子
+
+```js
+// 第一个插件
+function pluginA() {
+  return {
+    name: 'plugin-a',
+    api: {
+      // 自定义钩子
+      onPluginAEvent(fn) {
+        this._listeners = this._listeners || [];
+        this._listeners.push(fn);
+      },
+      // 触发事件
+      triggerEvent(data) {
+        if (this._listeners) {
+          this._listeners.forEach(fn => fn(data));
+        }
+      }
+    }
+  };
+}
+
+// 第二个插件
+function pluginB() {
+  return {
+    name: 'plugin-b',
+    configResolved(config) {
+      // 获取插件A
+      const pluginAInstance = config.plugins.find(p => p.name === 'plugin-a');
+      
+      // 注册监听
+      pluginAInstance.api.onPluginAEvent((data) => {
+        console.log('Event received in plugin B:', data);
+      });
+    },
+    buildStart() {
+      // 在某个时机触发事件
+      const pluginAInstance = this.config.plugins.find(p => p.name === 'plugin-a');
+      pluginAInstance.api.triggerEvent({ message: 'Hello from plugin B' });
+    }
+  };
+}
+```
+
+
+
+##### 使用外部存储
+
+```js
+// 创建一个模块作为共享存储
+// shared-store.js
+export const store = {
+  data: {},
+  set(key, value) {
+    this.data[key] = value;
+  },
+  get(key) {
+    return this.data[key];
+  }
+};
+
+
+// 第一个插件
+import { store } from './shared-store.js';
+
+function pluginA() {
+  return {
+    name: 'plugin-a',
+    buildStart() {
+      store.set('message', 'Hello from plugin A');
+    }
+  };
+}
+
+
+// 第二个插件
+import { store } from './shared-store.js';
+
+function pluginB() {
+  return {
+    name: 'plugin-b',
+    buildStart() {
+      console.log(store.get('message')); // 'Hello from plugin A'
+    }
+  };
+}
+```
+
+
+
+
+
 #### 插件 Hook 执行顺序
 
 通过一份配置查看 hook 执行顺序
@@ -3188,7 +3371,7 @@ apply(config, { command }) {
 }
 ```
 
-同时，你也可以通过`enforce`属性来指定插件的执行顺序:
+可以通过`enforce`属性来指定插件的执行顺序:
 
 ```typescript
 {
@@ -4056,10 +4239,20 @@ import { defineConfig } from 'vite'
 
 export default defineConfig({
   plugins: [
-    // 省略其它插件
+
+    /**
+     * 做 polyfill
+     * 
+     * 源码中 targets 取值
+     * targets =
+     *   options.targets ||
+     *   browserslistLoadConfig({ path: config.root }) ||
+     *   'last 2 versions and not dead, > 0.3%, Firefox ESR'
+     * 
+     * 不写 targets 或先从 browserlist 中找，没有 browserlist 则使用 'last 2 versions and not dead, > 0.3%, Firefox ESR'
+     */
     legacy({
-      // 设置目标浏览器，browserslist 配置语法
-      targets: ['ie >= 11'],
+      targets: '> 0.25%, not dead',
     })
   ]
 })
