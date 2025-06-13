@@ -4834,3 +4834,9 @@ export default {
 
 
 
+
+
+## Vite 源码阅读
+
+[vite源码阅读](https://github.com/gweid/vite-source-code/blob/master/README.md)
+
